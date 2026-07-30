@@ -1910,74 +1910,17 @@ with tab_mapas:
                 # 🌍 VÍA LENTA: POSTGIS CON CACHÉ DE UNIÓN TOPOLÓGICA
                 # =========================================================
                 else:
-                    # 🚀 ENRUTADOR ESPACIAL DINÁMICO BLINDADO CON CASTING WKB HEX -> GEOMETRY
+                    # 🚀 FIX DEFINITIVO: Usamos SELECT * para evitar cualquier error de columnas inexistentes
                     if "veredal" in escala_sel.lower(): 
-                        q_geo = "SELECT *, ST_GeomFromWKB(decode(geometry, 'hex')) AS geometry FROM veredas_geometria WHERE geometry IS NOT NULL"
-                        
-                    elif "cuencas" in escala_sel.lower():
-                        muestra_terr = str(df_mapa_plot['Territorio'].values).upper() if not df_mapa_plot.empty else ""
-                        
-                        if any(k in muestra_terr for k in ['ATRATODARIEN', 'CAUCA', 'MAGDALENA', 'CARIBE', 'SINU', 'NECHI', 'BAJOMAGDALENA', 'MEDIOMAGDALENA']):
-                            q_geo = '''
-                                SELECT nomzh AS "Territorio_Temp", zh AS "Padre_Temp", 
-                                       ST_Union(ST_GeomFromWKB(decode(geometry, 'hex'))) AS geometry 
-                                FROM cuencas WHERE geometry IS NOT NULL AND nomzh IS NOT NULL GROUP BY nomzh, zh
-                            '''
-                        elif any(k in muestra_terr for k in ['MAGDALENACAUCA', 'CARIBE']):
-                            q_geo = '''
-                                SELECT nomah AS "Territorio_Temp", ah AS "Padre_Temp", 
-                                       ST_Union(ST_GeomFromWKB(decode(geometry, 'hex'))) AS geometry 
-                                FROM cuencas WHERE geometry IS NOT NULL AND nomah IS NOT NULL GROUP BY nomah, ah
-                            '''
-                        else:
-                            q_geo = '''
-                                SELECT nom_nss3 AS "Territorio_Temp", nss3 AS "Padre_Temp", 
-                                       ST_GeomFromWKB(decode(geometry, 'hex')) AS geometry 
-                                FROM cuencas WHERE geometry IS NOT NULL AND nom_nss3 IS NOT NULL
-                            '''
-                            
-                    elif "departamental" in escala_sel.lower() or "nacional" in escala_sel.lower():
-                        q_geo = '''
-                            SELECT depto_nom AS "Territorio_Temp", 'colombia' AS "Padre_Temp", 
-                                   ST_Union(ST_GeomFromWKB(decode(geometry, 'hex'))) AS geometry 
-                            FROM municipios WHERE geometry IS NOT NULL AND depto_nom IS NOT NULL GROUP BY depto_nom
-                        '''
-                        
-                    elif "regional" in escala_sel.lower() or "macrorregiones" in escala_sel.lower():
-                        q_geo = '''
-                            SELECT region AS "Territorio_Temp", 'colombia' AS "Padre_Temp", 
-                                   ST_Union(ST_GeomFromWKB(decode(geometry, 'hex'))) AS geometry 
-                            FROM municipios WHERE geometry IS NOT NULL AND region IS NOT NULL GROUP BY region
-                        '''
-                        
-                    elif "subregiones" in escala_sel.lower():
-                        q_geo = '''
-                            SELECT subregion AS "Territorio_Temp", depto_nom AS "Padre_Temp", 
-                                   ST_Union(ST_GeomFromWKB(decode(geometry, 'hex'))) AS geometry 
-                            FROM municipios WHERE geometry IS NOT NULL AND subregion IS NOT NULL GROUP BY subregion, depto_nom
-                        '''
-                        
-                    elif "corporaciones" in escala_sel.lower() or "cars" in escala_sel.lower():
-                        q_geo = '''
-                            SELECT 
-                                CASE WHEN subregion ILIKE '%aburr%' THEN 'AMVA' ELSE car END AS "Territorio_Temp", 
-                                depto_nom AS "Padre_Temp",
-                                ST_Union(ST_GeomFromWKB(decode(geometry, 'hex'))) AS geometry 
-                            FROM municipios 
-                            WHERE geometry IS NOT NULL AND car IS NOT NULL
-                            GROUP BY CASE WHEN subregion ILIKE '%aburr%' THEN 'AMVA' ELSE car END, depto_nom
-                        '''
+                        q_geo = "SELECT * FROM veredas_geometria"
+                    elif "cuencas" in escala_sel.lower(): 
+                        q_geo = "SELECT * FROM cuencas"
                     else: 
-                        q_geo = '''
-                            SELECT nombre_municipio AS "Territorio_Temp", departamento AS "Padre_Temp", 
-                                   ST_GeomFromWKB(decode(geometry, 'hex')) AS geometry 
-                            FROM municipios WHERE geometry IS NOT NULL AND nombre_municipio IS NOT NULL
-                        '''
-
-                    # 🔑 MATCH ID SIMPLE Y UNIVERSAL (Territorio_Padre)
+                        q_geo = "SELECT * FROM municipios"
+                    
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
                         lambda row: normalizar_texto(row['Territorio']) if "cuencas" in escala_sel.lower() 
-                        else (normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row.get('Padre', '')).strip() else normalizar_texto(row['Territorio'])), 
+                        else (normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row['Padre']).strip() else normalizar_texto(row['Territorio'])), 
                         axis=1
                     )
                     
@@ -1985,29 +1928,6 @@ with tab_mapas:
                     
                     # 🚀 LLAMADA A LA CACHÉ INTELIGENTE
                     gdf_filtrado = obtener_geometria_disuelta_cached(escala_sel, q_geo, territorios_objetivo)
-                    
-                    # ========================================================
-                    # 🕵️‍♂️ BLOQUE FORENSE DE EMERGENCIA (INICIO)
-                    # ========================================================
-                    with st.expander("🚨 RESULTADOS DEL DIAGNÓSTICO FORENSE", expanded=True):
-                        st.write("**1. El Panel Demográfico está pidiendo esta llave exacta:**", territorios_objetivo)
-                        
-                        if gdf_filtrado is None or gdf_filtrado.empty:
-                            st.error("❌ FALLO ESPACIAL: 'gdf_filtrado' está vacío. O la consulta SQL falló, o las llaves no coinciden.")
-                            # Mostramos cómo armó la consulta SQL para revisarla
-                            st.code(q_geo, language="sql")
-                        else:
-                            st.success(f"✅ ÉXITO ESPACIAL: Se recuperaron {gdf_filtrado.shape[0]} polígonos de la base de datos.")
-                            # Si los encontró, mostramos qué llaves tienen los polígonos
-                            if 'MATCH_ID' in gdf_filtrado.columns:
-                                st.write("**2. Llaves reales entregadas por PostGIS (MATCH_ID):**", gdf_filtrado['MATCH_ID'].tolist())
-                            else:
-                                st.warning("El mapa cargó, pero le falta la columna 'MATCH_ID'.")
-                    # ========================================================
-                    # 🕵️‍♂️ BLOQUE FORENSE DE EMERGENCIA (FIN)
-                    # ========================================================
-
-                    safe_center_lat, safe_center_lon, safe_zoom = 4.57, -74.29, 5                    
                     
                     safe_center_lat, safe_center_lon, safe_zoom = 4.57, -74.29, 5
                     if not gdf_filtrado.empty:
@@ -2129,6 +2049,7 @@ with tab_mapas:
                 st.error(f"❌ Error procesando el geovisor: {e}")
         else:
             st.warning("⚠️ Esperando datos poblacionales del panel lateral...")
+
             
 # =====================================================================
 # PESTAÑA 4: GENERADOR DE MATRIZ MAESTRA (TOP-DOWN) MULTIMODELO CON R²
