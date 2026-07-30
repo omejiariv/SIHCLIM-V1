@@ -1753,37 +1753,29 @@ def obtener_geometria_disuelta_cached(escala, q_geo_str, territorios_objetivo_tu
     from sqlalchemy import text
     from modules.db_manager import get_engine
     import pandas as pd
+    from modules.utils import normalizar_texto
     
     engine_geo = get_engine()
     gdf = cargar_capa_espacial_cache(text(q_geo_str), engine_geo, geom_col="geometry")
     
-    if gdf.empty: return gdf
+    if gdf is None or gdf.empty: return gdf
     
     def armar_id_geo(row):
-        if "cuencas" in escala.lower():
-            cols_posibles = ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh', 'nomzh', 'nomah', 'NOM_NSS3', 'NOM_NSS2', 'NOM_NSS1']
-            for c in cols_posibles:
-                if c in row and pd.notnull(row[c]):
-                    val_norm = normalizar_texto(str(row[c]).strip())
-                    if val_norm in territorios_objetivo_tuple: return val_norm
-            val_terr = next((str(row[c]).strip() for c in cols_posibles if c in row and pd.notnull(row[c]) and str(row[c]).strip() not in ["", "None"]), "Cuenca Sin Nombre")
-            if "-" in val_terr: val_terr = val_terr.split("-")[-1]
-            return normalizar_texto(val_terr)
-            
-        elif "veredal" in escala.lower():
-            val_terr = str(row.get('NOMBRE_VER', row.get('nombre_ver', '')))
-            val_padre = str(row.get('NOMB_MPIO', row.get('nomb_mpio', row.get('MPIO_CNMBR', ''))))
-            return normalizar_texto(val_terr) + "_" + normalizar_texto(val_padre)
-            
-        else:
-            # 🚀 Usa los alias exactos que definimos en las consultas SQL
-            terr = str(row.get('Territorio_Temp', ''))
-            padre = str(row.get('Padre_Temp', 'colombia' if 'nacional' in escala.lower() or 'departamental' in escala.lower() or 'regional' in escala.lower() else ''))
+        # 🚀 CONFIANZA CIEGA EN EL SQL: Leemos los alias generados por la base de datos
+        terr = str(row.get('Territorio_Temp', row.get('nombre_municipio', '')))
+        padre = str(row.get('Padre_Temp', ''))
+        
+        # Si tiene padre (ej. Antioquia), unimos; si no (ej. Cuenca pura), queda solo el territorio
+        if padre and padre.strip() and padre.lower() not in ['none', 'nan', '']:
             return normalizar_texto(terr) + "_" + normalizar_texto(padre)
+        return normalizar_texto(terr)
             
     gdf['MATCH_ID'] = gdf.apply(armar_id_geo, axis=1)
     gdf_filtrado = gdf[gdf['MATCH_ID'].isin(territorios_objetivo_tuple)].copy()
     
+    if not gdf_filtrado.empty and len(gdf_filtrado) > 0:
+        gdf_filtrado = gdf_filtrado.dissolve(by='MATCH_ID').reset_index()
+        
     return gdf_filtrado
     
 # ==========================================
@@ -1910,17 +1902,45 @@ with tab_mapas:
                 # 🌍 VÍA LENTA: POSTGIS CON CACHÉ DE UNIÓN TOPOLÓGICA
                 # =========================================================
                 else:
-                    # 🚀 FIX DEFINITIVO: Usamos SELECT * para evitar cualquier error de columnas inexistentes
+                    # 🚀 ENRUTADOR ESPACIAL BLINDADO: Convierte WKB Hex a Geometría en tiempo real
                     if "veredal" in escala_sel.lower(): 
-                        q_geo = "SELECT * FROM veredas_geometria"
-                    elif "cuencas" in escala_sel.lower(): 
-                        q_geo = "SELECT * FROM cuencas"
+                        q_geo = "SELECT *, ST_GeomFromWKB(decode(geometry, 'hex')) AS geometry FROM veredas_geometria WHERE geometry IS NOT NULL"
+                        
+                    elif "cuencas" in escala_sel.lower():
+                        muestra_terr = str(df_mapa_plot['Territorio'].values).upper() if not df_mapa_plot.empty else ""
+                        
+                        if any(k in muestra_terr for k in ['ATRATODARIEN', 'CAUCA', 'MAGDALENA', 'CARIBE', 'SINU', 'NECHI']):
+                            q_geo = 'SELECT nomzh AS "Territorio_Temp", zh AS "Padre_Temp", ST_Union(ST_GeomFromWKB(decode(geometry, 'hex'))) AS geometry FROM cuencas WHERE geometry IS NOT NULL AND nomzh IS NOT NULL GROUP BY nomzh, zh'
+                        elif any(k in muestra_terr for k in ['MAGDALENACAUCA', 'CARIBE']):
+                            q_geo = 'SELECT nomah AS "Territorio_Temp", ah AS "Padre_Temp", ST_Union(ST_GeomFromWKB(decode(geometry, 'hex'))) AS geometry FROM cuencas WHERE geometry IS NOT NULL AND nomah IS NOT NULL GROUP BY nomah, ah'
+                        else:
+                            q_geo = 'SELECT nom_nss3 AS "Territorio_Temp", nss3 AS "Padre_Temp", ST_GeomFromWKB(decode(geometry, 'hex')) AS geometry FROM cuencas WHERE geometry IS NOT NULL AND nom_nss3 IS NOT NULL'
+                            
+                    elif "departamental" in escala_sel.lower() or "nacional" in escala_sel.lower():
+                        q_geo = 'SELECT depto_nom AS "Territorio_Temp", \'colombia\' AS "Padre_Temp", ST_Union(ST_GeomFromWKB(decode(geometry, 'hex'))) AS geometry FROM municipios WHERE geometry IS NOT NULL AND depto_nom IS NOT NULL GROUP BY depto_nom'
+                        
+                    elif "regional" in escala_sel.lower() or "macrorregiones" in escala_sel.lower():
+                        q_geo = 'SELECT region AS "Territorio_Temp", \'colombia\' AS "Padre_Temp", ST_Union(ST_GeomFromWKB(decode(geometry, 'hex'))) AS geometry FROM municipios WHERE geometry IS NOT NULL AND region IS NOT NULL GROUP BY region'
+                        
+                    elif "subregiones" in escala_sel.lower():
+                        q_geo = 'SELECT subregion AS "Territorio_Temp", depto_nom AS "Padre_Temp", ST_Union(ST_GeomFromWKB(decode(geometry, 'hex'))) AS geometry FROM municipios WHERE geometry IS NOT NULL AND subregion IS NOT NULL GROUP BY subregion, depto_nom'
+                        
+                    elif "corporaciones" in escala_sel.lower() or "cars" in escala_sel.lower():
+                        q_geo = '''
+                            SELECT 
+                                CASE WHEN subregion ILIKE '%aburr%' THEN 'AMVA' ELSE car END AS "Territorio_Temp", 
+                                depto_nom AS "Padre_Temp",
+                                ST_Union(ST_GeomFromWKB(decode(geometry, 'hex'))) AS geometry 
+                            FROM municipios WHERE geometry IS NOT NULL AND car IS NOT NULL
+                            GROUP BY CASE WHEN subregion ILIKE '%aburr%' THEN 'AMVA' ELSE car END, depto_nom
+                        '''
                     else: 
-                        q_geo = "SELECT * FROM municipios"
-                    
+                        q_geo = 'SELECT nombre_municipio AS "Territorio_Temp", departamento AS "Padre_Temp", ST_GeomFromWKB(decode(geometry, 'hex')) AS geometry FROM municipios WHERE geometry IS NOT NULL AND nombre_municipio IS NOT NULL'
+
+                    # 🔑 MATCH ID SIMPLE Y UNIVERSAL (Territorio_Padre)
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
                         lambda row: normalizar_texto(row['Territorio']) if "cuencas" in escala_sel.lower() 
-                        else (normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row['Padre']).strip() else normalizar_texto(row['Territorio'])), 
+                        else (normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row.get('Padre', '')).strip() else normalizar_texto(row['Territorio'])), 
                         axis=1
                     )
                     
