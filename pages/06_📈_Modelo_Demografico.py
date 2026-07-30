@@ -1756,36 +1756,30 @@ def obtener_geometria_disuelta_cached(escala, q_geo_str, territorios_objetivo_tu
     from modules.utils import normalizar_texto
     
     engine_geo = get_engine()
-    
-    # 1. Llamada a la base de datos
     gdf = cargar_capa_espacial_cache(text(q_geo_str), engine_geo, geom_col="geometry")
     
-    # 🛡️ 2. ESCUDO ANTI-NONE: Si la consulta falló por completo, devolvemos None seguro
     if gdf is None or type(gdf) == type(None) or gdf.empty: 
         return None
     
-    # 3. Emparejamiento Topológico
     def armar_id_geo(row):
-        # Confiamos CIEGAMENTE en los alias que envía la consulta SQL
-        terr = str(row.get('Territorio_Temp', ''))
-        padre = str(row.get('Padre_Temp', ''))
+        # 🚀 FIX MINÚSCULAS: Buscamos el alias sin importar cómo lo formatee SQLAlchemy
+        terr = str(row.get('territorio_temp', row.get('Territorio_Temp', '')))
+        padre = str(row.get('padre_temp', row.get('Padre_Temp', '')))
         
         if padre and padre.strip() and padre.lower() not in ['none', 'nan', '']:
             return normalizar_texto(terr) + "_" + normalizar_texto(padre)
         return normalizar_texto(terr)
             
     gdf['MATCH_ID'] = gdf.apply(armar_id_geo, axis=1)
-    
-    # 4. Filtrar solo los polígonos que necesitamos (Cruce con la matriz demográfica)
     territorios_validos = [t for t in territorios_objetivo_tuple if t in gdf['MATCH_ID'].values]
     
     if not territorios_validos:
-        return None # Si no hay cruce, devolvemos None
+        return None
         
     gdf_filtrado = gdf[gdf['MATCH_ID'].isin(territorios_validos)].copy()
     
-    # 5. Disolver y Unir (Romper fronteras internas)
     if not gdf_filtrado.empty:
+        # 🚀 Delegamos la unión topológica (ST_Union) a Python. ¡Es más rápido y no da timeout!
         gdf_filtrado = gdf_filtrado.dissolve(by='MATCH_ID').reset_index()
         
     return gdf_filtrado
