@@ -1936,21 +1936,37 @@ with tab_mapas:
                 # 🌍 VÍA LENTA: POSTGIS CON CACHÉ DE UNIÓN TOPOLÓGICA
                 # =========================================================
                 else:
-                    # 🚀 La base de datos asume el trabajo pesado gracias a la inyección SQL
+                    # 🚀 ENRUTADOR ESPACIAL INTELIGENTE DE CUENCAS Y MUNICIPIOS
                     if "veredal" in escala_sel.lower(): 
                         q_geo = "SELECT * FROM veredas_geometria"
-                    elif "cuencas" in escala_sel.lower(): 
-                        q_geo = "SELECT * FROM cuencas"
+                        
+                    elif "cuencas" in escala_sel.lower():
+                        # Detectamos automáticamente qué nivel hídrico está pidiendo el panel
+                        # para agrupar (dissolve) las geometrías en consecuencia desde la BD.
+                        if "macro" in str(locals().get('resolucion_cuenca', '')).lower() or any(k in str(territorios_objetivo) for k in ['ATRATO', 'CAUCA', 'MAGDALENA']):
+                            q_geo = 'SELECT nomzh AS "Territorio_Temp", zh AS "Padre_Temp", ST_Union(geometry) AS geometry FROM cuencas WHERE geometry IS NOT NULL GROUP BY nomzh, zh'
+                        else:
+                            q_geo = 'SELECT nom_nss3 AS "Territorio_Temp", nss3 AS "Padre_Temp", geometry FROM cuencas WHERE geometry IS NOT NULL'
+                            
                     elif "departamental" in escala_sel.lower() or "nacional" in escala_sel.lower():
-                        q_geo = 'SELECT depto_nom AS "Territorio_Temp", ST_Union(geometry) AS geometry FROM municipios GROUP BY depto_nom'
+                        q_geo = 'SELECT depto_nom AS "Territorio_Temp", \'colombia\' AS "Padre_Temp", ST_Union(geometry) AS geometry FROM municipios GROUP BY depto_nom'
+                        
                     elif "regional" in escala_sel.lower() or "macrorregiones" in escala_sel.lower():
-                        q_geo = 'SELECT region AS "Territorio_Temp", ST_Union(geometry) AS geometry FROM municipios GROUP BY region'
+                        q_geo = 'SELECT region AS "Territorio_Temp", \'colombia\' AS "Padre_Temp", ST_Union(geometry) AS geometry FROM municipios GROUP BY region'
+                        
                     elif "subregiones" in escala_sel.lower():
                         q_geo = 'SELECT subregion AS "Territorio_Temp", depto_nom AS "Padre_Temp", ST_Union(geometry) AS geometry FROM municipios GROUP BY subregion, depto_nom'
+                        
                     elif "corporaciones" in escala_sel.lower() or "cars" in escala_sel.lower():
-                        q_geo = 'SELECT car AS "Territorio_Temp", ST_Union(geometry) AS geometry FROM municipios GROUP BY car'
+                        q_geo = """
+                            SELECT 
+                                CASE WHEN subregion ILIKE '%aburr%' THEN 'AMVA' ELSE car END AS "Territorio_Temp", 
+                                depto_nom AS "Padre_Temp",
+                                ST_Union(geometry) AS geometry 
+                            FROM municipios 
+                            GROUP BY CASE WHEN subregion ILIKE '%aburr%' THEN 'AMVA' ELSE car END, depto_nom
+                        """
                     else: 
-                        # Escala municipal
                         q_geo = 'SELECT nombre_municipio AS "Territorio_Temp", departamento AS "Padre_Temp", geometry FROM municipios'
 
                     # 🔑 MATCH ID SIMPLE Y UNIVERSAL (Territorio_Padre)
