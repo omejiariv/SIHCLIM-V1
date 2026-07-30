@@ -2021,6 +2021,8 @@ with tab_mapas:
                 # 🎨 RENDERIZADO UNIFICADO CON CAPAS MÚLTIPLES (ESCALA LOGARÍTMICA)
                 # =========================================================
                 import numpy as np
+
+                st.write("Auditoría de Datos a Pintar:", datos_para_dibujar[['Territorio', 'MATCH_ID', 'Total']].head())
                 
                 if datos_para_dibujar['Total'].sum() == 0:
                     datos_para_dibujar['Color_Fix'] = 1 
