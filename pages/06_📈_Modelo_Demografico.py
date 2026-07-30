@@ -1748,8 +1748,8 @@ with tab_opt:
         else:
             st.caption("Presiona 'Optimizar Parámetros' o ajusta manualmente para visualizar las ecuaciones.")
             
-@st.cache_data(ttl=86400, show_spinner="🧩 Motor Espacial V2 (Conectando geometrías...)")
-def motor_espacial_v2(escala, q_geo_str, territorios_objetivo_tuple):
+# 🛑 ATENCIÓN: FUNCIÓN SIN CACHÉ PARA DIAGNÓSTICO EN TIEMPO REAL
+def sonda_diagnostica(escala, q_geo_str, territorios_objetivo_tuple):
     from sqlalchemy import text
     from modules.db_manager import get_engine
     import pandas as pd
@@ -1759,72 +1759,102 @@ def motor_espacial_v2(escala, q_geo_str, territorios_objetivo_tuple):
     import difflib
 
     engine_geo = get_engine()
-
+    
+    st.error("🔬 **MODO DIAGNÓSTICO FORENSE ACTIVADO**")
+    st.write(f"**Escala seleccionada:** {escala}")
+    st.code(q_geo_str, language='sql')
+    
+    # --- PASO 1: CONEXIÓN Y DESCARGA CRUDAS ---
     try:
-        # Intentamos leer geometrías nativas (Tus nuevos municipios PostGIS)
-        gdf = gpd.read_postgis(text(q_geo_str), engine_geo.connect(), geom_col="geometry")
-    except Exception as e_postgis:
-        # Si falla (ej. Cuencas WKB antiguo), usamos el decodificador manual a prueba de balas
+        with engine_geo.connect() as conn:
+            df = pd.read_sql(text(q_geo_str), conn)
+            st.success(f"✅ **Paso 1 (Extracción SQL):** OK. Filas recuperadas: {len(df)}")
+            
+            if not df.empty:
+                st.write("📊 **Muestra de los datos que entrega Supabase (Primeras 3 filas):**")
+                st.dataframe(df.head(3))
+                
+                val_geo = df['geometry'].dropna().iloc[0] if not df['geometry'].dropna().empty else None
+                st.write(f"🧬 **Estructura de la 'geometry':** Tipo -> `{type(val_geo)}`")
+                st.write(f"🧬 **Muestra cruda (Primeros 50 caracteres):** `{str(val_geo)[:50]}`")
+            else:
+                st.warning("⚠️ **FALLO CRÍTICO EN PASO 1:** La base de datos devolvió 0 filas. La tabla está vacía o el filtro de la consulta (WHERE) eliminó todo.")
+                return None
+    except Exception as e:
+        st.error(f"🚨 **FALLO CRÍTICO EN PASO 1 (Error de Servidor):** {e}")
+        return None
+
+    # --- PASO 2: PARSEO GEOMÉTRICO ---
+    geometries = []
+    from shapely import wkb, wkt
+    import json
+    from shapely.geometry import shape
+
+    exitos_parseo = 0
+    for geom_val in df['geometry']:
+        if pd.isnull(geom_val): 
+            geometries.append(None)
+            continue
+        geom_str = str(geom_val).strip()
         try:
-            with engine_geo.connect() as conn:
-                df = pd.read_sql(text(q_geo_str), conn)
-            if df.empty: return None
+            if geom_str.startswith('{'): geometries.append(shape(json.loads(geom_str)))
+            elif geom_str.startswith(('POLYGON', 'MULTIPOLYGON')): geometries.append(wkt.loads(geom_str))
+            else: geometries.append(wkb.loads(bytes.fromhex(geom_str)))
+            exitos_parseo += 1
+        except Exception:
+            geometries.append(None)
+            
+    if exitos_parseo > 0:
+        st.success(f"🧩 **Paso 2 (Decodificación Espacial):** OK. Geometrías válidas rescatadas: {exitos_parseo} de {len(df)}")
+    else:
+        st.error("🚨 **FALLO CRÍTICO EN PASO 2:** El script extrajo los datos, pero fue incapaz de descifrar la geometría. El formato guardado en Supabase no es WKB hexadecimal ni GeoJSON.")
+        return None
 
-            from shapely import wkb, wkt
-            import json
-            from shapely.geometry import shape
-
-            geometries = []
-            for geom_val in df['geometry']:
-                if pd.isnull(geom_val): geometries.append(None); continue
-                geom_str = str(geom_val).strip()
-                try:
-                    if geom_str.startswith('{'): geometries.append(shape(json.loads(geom_str)))
-                    elif geom_str.startswith(('POLYGON', 'MULTIPOLYGON')): geometries.append(wkt.loads(geom_str))
-                    else: geometries.append(wkb.loads(bytes.fromhex(geom_str)))
-                except: geometries.append(None)
-
-            gdf = gpd.GeoDataFrame(df, geometry=geometries, crs="EPSG:4326")
-        except Exception as e:
-            # 🚨 SI SQL EXPLOTA, AHORA LO VEREMOS EN ROJO GIGANTE
-            st.error(f"🚨 Error crítico de Base de Datos: {e}")
-            return None
-
-    gdf = gdf.dropna(subset=['geometry'])
-    if gdf.empty: return None
-
+    gdf = gpd.GeoDataFrame(df, geometry=geometries, crs="EPSG:4326").dropna(subset=['geometry'])
+    
+    # --- PASO 3: CONSTRUCCIÓN DE LLAVES ---
     def armar_id_geo(row):
         terr = str(row.get('territorio_temp', row.get('Territorio_Temp', '')))
         padre = str(row.get('padre_temp', row.get('Padre_Temp', '')))
-
         if "cuencas" in escala.lower(): return normalizar_texto(terr)
         if padre and padre.strip() and padre.lower() not in ['none', 'nan', '']:
             return normalizar_texto(terr) + "_" + normalizar_texto(padre)
         return normalizar_texto(terr)
 
     gdf['MATCH_ID'] = gdf.apply(armar_id_geo, axis=1)
-
-    # 🚀 ALGORITMO SANADOR: Reconecta nombres rotos ("Medelln" = "Medellin")
     db_ids = gdf['MATCH_ID'].tolist()
+    objetivos = list(territorios_objetivo_tuple)
+    
+    st.write("🔑 **Paso 3 (Análisis de Identidades - MATCH_ID)**")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.info(f"📌 **Qué busca tu Modelo Demográfico:** ({len(objetivos)} entidades)")
+        st.write(objetivos[:15])
+    with col2:
+        st.info(f"📌 **Qué tiene tu Base de Datos:** ({len(db_ids)} entidades)")
+        st.write(db_ids[:15])
+        
+    # --- PASO 4: ALGORITMO DE CRUCE (MATCHING) ---
     territorios_validos = []
-
-    for objetivo in territorios_objetivo_tuple:
-        if objetivo in db_ids:
-            territorios_validos.append(objetivo)
+    for obj in objetivos:
+        if obj in db_ids: territorios_validos.append(obj)
         else:
-            matches = difflib.get_close_matches(objetivo, db_ids, n=1, cutoff=0.8)
+            matches = difflib.get_close_matches(obj, db_ids, n=1, cutoff=0.8)
             if matches:
-                gdf.loc[gdf['MATCH_ID'] == matches[0], 'MATCH_ID'] = objetivo
-                territorios_validos.append(objetivo)
+                gdf.loc[gdf['MATCH_ID'] == matches[0], 'MATCH_ID'] = obj
+                territorios_validos.append(obj)
 
-    if not territorios_validos: return None
+    if len(territorios_validos) > 0:
+        st.success(f"🔗 **Paso 4 (Cruce):** OK. Coincidencias logradas: {len(territorios_validos)} de {len(objetivos)} buscadas.")
+    else:
+        st.error("🚨 **FALLO CRÍTICO EN PASO 4:** 0 coincidencias. Los nombres de la base de datos y los del modelo demográfico no se parecen en lo absoluto (cruce roto).")
+        return None
 
     gdf_filtrado = gdf[gdf['MATCH_ID'].isin(territorios_validos)].copy()
-
     if not gdf_filtrado.empty:
-        # Python hace la unión topológica, evitando sobrecargar Supabase
         gdf_filtrado = gdf_filtrado.dissolve(by='MATCH_ID').reset_index()
 
+    st.success("✅ **DIAGNÓSTICO EXITOSO. ENVIANDO CAPA AL MAPA...**")
     return gdf_filtrado
     
 # ==========================================
@@ -1985,7 +2015,7 @@ with tab_mapas:
                     territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().tolist())
                     
                     # 🚀 LLAMAMOS AL NUEVO MOTOR (Destruye la caché anterior y obliga al recálculo)
-                    gdf_filtrado = motor_espacial_v2(escala_sel, q_geo, territorios_objetivo)
+                    gdf_filtrado = sonda_diagnostica(escala_sel, q_geo, territorios_objetivo)
                     
                     # 🛡️ ESCUDO ANTI-VACÍOS (Evita el error 'NoneType' y detiene la sábana blanca)
                     if gdf_filtrado is None or gdf_filtrado.empty:
