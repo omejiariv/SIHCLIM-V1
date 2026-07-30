@@ -1760,8 +1760,10 @@ def obtener_geometria_disuelta_cached(escala, q_geo_str, territorios_objetivo_tu
     import pandas as pd
     import requests
     import io
+    from modules.utils import normalizar_texto
 
     engine_geo = get_engine()
+    # Ejecuta la consulta (En escalas administrativas, bajará los átomos municipales puros)
     gdf = cargar_capa_espacial_cache(text(q_geo_str), engine_geo, geom_col="geometry")
     
     escala_lower = escala.lower()
@@ -1771,20 +1773,24 @@ def obtener_geometria_disuelta_cached(escala, q_geo_str, territorios_objetivo_tu
     if es_escala_admin and not gdf.empty and 'id_municipio' in gdf.columns:
         url_maestro = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/territorio_maestro.xlsx"
         try:
-            # Descargamos el Excel maestro que dicta la jerarquía bottom-up
-            resp = requests.get(url_maestro, verify=False, timeout=15)
+            # 🔥 FIX CRÍTICO: Headers obligatorios para evadir el bloqueo de seguridad de Supabase Storage
+            resp = requests.get(url_maestro, headers={'User-Agent': 'Mozilla/5.0'}, verify=False, timeout=15)
             if resp.status_code == 200:
                 df_maestro = pd.read_excel(io.BytesIO(resp.content))
-                # Limpieza estricta del código DANE para el cruce (5 dígitos)
+                # Limpieza estricta de IDs para el cruce (5 dígitos DANE)
                 df_maestro['dp_mp'] = df_maestro['dp_mp'].astype(str).str.strip().str.split('.').str[0].str.zfill(5)
                 gdf['id_municipio'] = gdf['id_municipio'].astype(str).str.strip().str.zfill(5)
                 
-                # Fusión (Merge) Tabular-Espacial: Los polígonos adquieren las columnas region, subregion, car, etc.
+                # Fusión Espacial-Tabular
                 gdf = gdf.merge(df_maestro, left_on='id_municipio', right_on='dp_mp', how='inner')
+            else:
+                print(f"Error HTTP al descargar maestro: {resp.status_code}")
         except Exception as e:
-            print(f"Error inyectando el maestro territorial en el motor espacial: {e}")
+            print(f"Error inyectando el maestro territorial: {e}")
 
-    # 🔥 FIX: Lógica de construcción de llaves dinámicas
+    # 🔥 FIX Veredal: Reincorporación del Diccionario DANE
+    codigos_dane_deptos = { "05": "ANTIOQUIA", "08": "ATLANTICO", "11": "BOGOTA", "13": "BOLIVAR", "15": "BOYACA", "17": "CALDAS", "18": "CAQUETA", "19": "CAUCA", "20": "CESAR", "23": "CORDOBA", "25": "CUNDINAMARCA", "27": "CHOCO", "41": "HUILA", "44": "GUAJIRA", "47": "MAGDALENA", "50": "META", "52": "NARINO", "54": "NORTEDESANTANDER", "63": "QUINDIO", "66": "RISARALDA", "68": "SANTANDER", "70": "SUCRE", "73": "TOLIMA", "76": "VALLEDELCAUCA", "81": "ARAUCA", "85": "CASANARE", "86": "PUTUMAYO", "88": "ARCHIPIELAGODESANANDRES", "91": "AMAZONAS", "94": "GUAINIA", "95": "GUAVIARE", "97": "VAUPES", "99": "VICHADA" }
+
     def generar_id_geojson(row):
         if "cuencas" in escala_lower:
             cols_posibles = ['nom_nss3', 'nom_nss2', 'nom_nss1', 'nom_szh', 'nomzh', 'nomah', 'NOM_NSS3', 'NOM_NSS2', 'NOM_NSS1']
@@ -1803,7 +1809,7 @@ def obtener_geometria_disuelta_cached(escala, q_geo_str, territorios_objetivo_tu
             return normalizar_texto(val_terr) + "_" + normalizar_texto(val_padre)
             
         else:
-            # 🏛️ MOTOR BOTTOM-UP: Forjado de llaves a partir de la jerarquía inyectada
+            # 🏛️ LÓGICA BOTTOM-UP: Garantiza sincronía perfecta (Territorio_Padre)
             if "departamental" in escala_lower or "nacional" in escala_lower:
                 terr = str(row.get('depto_nom', row.get('departamento', '')))
                 padre = "colombia"
@@ -1812,30 +1818,31 @@ def obtener_geometria_disuelta_cached(escala, q_geo_str, territorios_objetivo_tu
                 padre = "colombia"
             elif "subregion" in escala_lower:
                 terr = str(row.get('subregion', ''))
-                padre = str(row.get('depto_nom', ''))
+                padre = str(row.get('depto_nom', row.get('departamento', '')))
             elif "corporaciones" in escala_lower or "cars" in escala_lower:
                 terr = str(row.get('car', ''))
-                padre = str(row.get('depto_nom', ''))
+                padre = str(row.get('depto_nom', row.get('departamento', '')))
             else:
-                # 🔑 Escala Municipal: Tu Llave Maestra (Código Único Concatendo)
-                dpto = normalizar_texto(str(row.get('depto_nom', row.get('departamento', ''))))
-                reg = normalizar_texto(str(row.get('region', '')))
-                car = normalizar_texto(str(row.get('car', '')))
-                mun = normalizar_texto(str(row.get('municipio', row.get('nombre_municipio', ''))))
+                # Escalas Municipales
+                mun = str(row.get('municipio', row.get('nombre_municipio', '')))
+                if normalizar_texto(mun) == "manaurebalcondelcesar": mun = "manaure"
                 
-                # Excepción de parche Manaure
-                if mun == "manaurebalcondelcesar": mun = "manaure"
-                
-                return f"{dpto}_{reg}_{car}_{mun}"
+                # Adapta el padre según la selección visual
+                if "regiones" in escala_lower:
+                    padre = str(row.get('region', ''))
+                else:
+                    padre = str(row.get('depto_nom', row.get('departamento', '')))
+                return normalizar_texto(mun) + "_" + normalizar_texto(padre)
 
             if not terr or terr == 'nan': return None
             return normalizar_texto(terr) + "_" + normalizar_texto(padre)
 
+    # Forja de llaves y filtrado espacial
     gdf['MATCH_ID'] = gdf.apply(generar_id_geojson, axis=1)
     gdf_filtrado = gdf[gdf['MATCH_ID'].isin(territorios_objetivo_tuple)].copy()
     
     if not gdf_filtrado.empty and len(gdf_filtrado) > 0:
-        # Geopandas agrupa los municipios y construye la silueta regional/departamental automáticamente
+        # El motor 'dissolve' fusionará los municipios compartidos en la silueta objetivo
         gdf_filtrado = gdf_filtrado.dissolve(by='MATCH_ID').reset_index()
         
     return gdf_filtrado
@@ -1964,22 +1971,18 @@ with tab_mapas:
                 # 🌍 VÍA LENTA: POSTGIS CON CACHÉ DE UNIÓN TOPOLÓGICA
                 # =========================================================
                 else:
+                    # 🚀 FIX: Consultas planas, delegamos la agrupación compleja al Aleph
                     if "veredal" in escala_sel.lower(): 
                         q_geo = "SELECT * FROM veredas_geometria"
                     elif "cuencas" in escala_sel.lower(): 
                         q_geo = "SELECT * FROM cuencas"
                     else: 
-                        # Extraemos los átomos municipales. El Aleph los agrupará.
                         q_geo = "SELECT id_municipio, nombre_municipio, departamento, geometry FROM municipios WHERE geometry IS NOT NULL"
                     
+                    # 🔑 MATCH ID SIMPLE Y UNIVERSAL (Territorio_Padre)
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
                         lambda row: normalizar_texto(row['Territorio']) if "cuencas" in escala_sel.lower() 
-                        else (
-                            # 🔑 Sincronización de la llave maestra para municipios en el DataFrame
-                            (normalizar_texto(row.get('depto_nom', '')) + "_" + normalizar_texto(row.get('region', '')) + "_" + normalizar_texto(row.get('car', '')) + "_" + normalizar_texto(row['Territorio']))
-                            if "municipal" in escala_sel.lower() and 'region' in row 
-                            else (normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row['Padre']).strip() else normalizar_texto(row['Territorio']))
-                        ), 
+                        else (normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row['Padre']).strip() else normalizar_texto(row['Territorio'])), 
                         axis=1
                     )
                     
