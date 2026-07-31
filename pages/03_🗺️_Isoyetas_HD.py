@@ -235,6 +235,21 @@ ignore_nulls = c2.checkbox("🚫 No Nulos", value=True)
 do_interp_temp = False
 if complete_series: do_interp_temp = st.sidebar.checkbox("🔄 Interpolación Temporal", value=False)
 
+# --- NUEVAS HERRAMIENTAS V3.0 (Resolución, Suavizado e Info) ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("🛠️ Herramientas de Renderizado")
+grid_res = st.sidebar.slider("Resolución Espacial (Píxeles):", min_value=50, max_value=500, value=200, step=50, help="Mayor resolución = isoyetas más definidas pero carga más lenta.")
+smooth_val = st.sidebar.slider("Suavizado de Curvas (Smooth):", min_value=0.0, max_value=1.3, value=1.0, step=0.1, help="0 = Cuadrículas crudas. 1.3 = Curvas muy fluidas.")
+
+info_metodos = {
+    "Kriging Ordinario": "Usa autocorrelación espacial. Ideal para modelar el clima regional.",
+    "Kriging con Deriva Externa (KED)": "Permite usar la altitud como variable secundaria para mayor precisión en montañas.",
+    "Spline (Thin Plate)": "Ajusta una superficie exacta por los puntos. Bueno para variaciones suaves.",
+    "Distancia Inversa (IDW)": "Método clásico donde los pluviómetros cercanos tienen más peso.",
+    "Tendencia Lineal": "Ajusta un plano general. Útil para ver grandes gradientes (ej. Norte-Sur)."
+}
+st.sidebar.info(f"💡 **Sobre {metodo_seleccionado}:**\n{info_metodos.get(metodo_seleccionado, '')}")
+
 # --- 6. METADATOS Y ÁREA DE INFLUENCIA (BUFFER) ---
 with st.spinner("Cargando catálogo de estaciones..."):
     gdf_meta, _ = obtener_estaciones_enriquecidas()
@@ -336,7 +351,6 @@ with tab_mapa:
                 
                 if len(df_final) >= 3:
                     with st.spinner(f"Interpolando {len(df_final)} estaciones válidas..."):
-                        grid_res = 200 
                         
                         margin_lon = (df_final['lon_calc'].max() - df_final['lon_calc'].min()) * 0.15 or 0.1
                         margin_lat = (df_final['lat_calc'].max() - df_final['lat_calc'].min()) * 0.15 or 0.1
@@ -366,14 +380,16 @@ with tab_mapa:
                         c_cuenca = df_final[col_cuenca].fillna('-') if col_cuenca else ["-"]*len(df_final)
                         custom_data = np.stack((c_muni, c_alt, c_cuenca, df_final['hover_val']), axis=-1)
                         
+                        # 🚀 CONTORNO ACTUALIZADO CON LOS SLIDERS
                         fig.add_trace(go.Contour(
                             z=grid_z.T, x=np.linspace(q_minx, q_maxx, grid_res), y=np.linspace(q_miny, q_maxy, grid_res),
                             colorscale=paleta_colores, zmin=z_min, zmax=z_max, colorbar=dict(title="mm/año"),
                             contours=dict(coloring='heatmap', showlabels=True, labelfont=dict(size=10, color='white')),
-                            opacity=0.8, connectgaps=True, line_smoothing=1.3
+                            opacity=0.8, connectgaps=True, line_smoothing=smooth_val
                         ))
                         
-                        add_context_layers_robust(fig, ver_cuencas, ver_municipios)
+                        # 🚀 LLAMADO ACTUALIZADO AL LÍMITE Y MUNICIPIOS EN BASE DE DATOS
+                        add_context_layers_robust(fig, gdf_zona, ver_municipios)
                         
                         fig.add_trace(go.Scatter(
                             x=df_final['lon_calc'], y=df_final['lat_calc'], mode='markers',
@@ -408,11 +424,13 @@ with tab_mapa:
             st.warning("No hay registros en la base de datos para esta zona y periodo.")
             
         with st.expander("🔍 Ver Datos Crudos", expanded=False):
-            if not df_agg.empty and 'df_final' in locals(): st.dataframe(df_final)
+            # 🚀 Escudo Anti-Errores
+            if 'df_final' in locals() and not df_final.empty: 
+                st.dataframe(df_final)
 
     except Exception as e:
         st.error(f"Error procesando datos: {e}")
-
+        
 # --- 8. DESCARGAS GIS ---
 with tab_datos:
     if 'df_final' in locals() and not df_final.empty:
