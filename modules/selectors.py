@@ -395,7 +395,7 @@ def render_selector_espacial(modo_firma="clasica"):
     engine = db_manager.get_engine()
     if engine is None:
         st.error("Error crítico: No hay conexión a la base de datos.")
-        return ids_estaciones, nombre_zona, altitud_ref, gdf_zona
+        return ids_estaciones, nombre_zona, altitud_ref, gdf_zona, None
     
     with st.sidebar.expander("📍 Filtros Geográficos Principales", expanded=True):
         modo = st.radio("Nivel de Agregación:", ["Por Cuenca", "Por Municipio", "Por Región", "Departamento"], index=0)
