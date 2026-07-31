@@ -68,7 +68,7 @@ with st.expander("🌊 Manifiesto de las Aguas Ocultas", expanded=False):
 st.divider()
 
 # --- 1. SELECTOR ESPACIAL (CONECTADO AL SELECTOR ARREGLADO) ---       
-ids_estaciones, nombre_zona, altitud_ref, gdf_zona = selectors.render_selector_espacial()
+ids_estaciones, nombre_zona, altitud_ref, gdf_zona, *extras = selectors.render_selector_espacial()
 engine = db_manager.get_engine()                                       
 
 # 🚀 FIX: AÑADIR EL BUFFER ESPACIAL AL SIDEBAR DE AGUAS SUBTERRÁNEAS
