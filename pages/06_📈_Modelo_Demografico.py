@@ -1888,7 +1888,7 @@ with tab_mapas:
                 # 🌍 VÍA LENTA: POSTGIS CON CACHÉ DE UNIÓN TOPOLÓGICA
                 # =========================================================
                 else:
-                    # 🚀 ENRUTADOR ESPACIAL BLINDADO V3 (Municipios como bloques de Lego)
+                    # 🚀 ENRUTADOR ESPACIAL BLINDADO V3 (Restaurado a la coherencia jerárquica)
                     if "veredal" in escala_sel.lower(): 
                         q_geo = "SELECT nombre_ver AS territorio_temp, nomb_mpio AS padre_temp, geometry FROM veredas_geometria WHERE geometry IS NOT NULL"
                         
@@ -1901,10 +1901,19 @@ with tab_mapas:
                         else:
                             q_geo = "SELECT nom_nss3 AS territorio_temp, nss3 AS padre_temp, geometry FROM cuencas WHERE geometry IS NOT NULL AND nom_nss3 IS NOT NULL"
                             
+                    elif "departamental" in escala_sel.lower() or "nacional" in escala_sel.lower():
+                        q_geo = "SELECT depto_nom AS territorio_temp, 'colombia' AS padre_temp, geometry FROM municipios WHERE geometry IS NOT NULL AND depto_nom IS NOT NULL"
+                        
+                    elif "regional" in escala_sel.lower() or "macrorregiones" in escala_sel.lower():
+                        q_geo = "SELECT region AS territorio_temp, 'colombia' AS padre_temp, geometry FROM municipios WHERE geometry IS NOT NULL AND region IS NOT NULL"
+                        
+                    elif "subregiones" in escala_sel.lower():
+                        q_geo = "SELECT subregion AS territorio_temp, depto_nom AS padre_temp, geometry FROM municipios WHERE geometry IS NOT NULL AND subregion IS NOT NULL"
+                        
+                    elif "corporaciones" in escala_sel.lower() or "cars" in escala_sel.lower():
+                        q_geo = "SELECT CASE WHEN subregion ILIKE '%aburr%' THEN 'AMVA' ELSE car END AS territorio_temp, depto_nom AS padre_temp, geometry FROM municipios WHERE geometry IS NOT NULL AND car IS NOT NULL"
+                        
                     else: 
-                        # 🚀 EL FIX MAESTRO: Para TODAS las escalas administrativas 
-                        # (Nacional, Depto, Subregion, CAR, etc.) SIEMPRE pedimos los polígonos 
-                        # de los municipios. La app agrupará y coloreará los seleccionados automáticamente.
                         q_geo = "SELECT nombre_municipio AS territorio_temp, depto_nom AS padre_temp, geometry FROM municipios WHERE geometry IS NOT NULL AND nombre_municipio IS NOT NULL"
 
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
@@ -1915,7 +1924,7 @@ with tab_mapas:
                     
                     territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().tolist())
                     
-                    # Llamamos al motor definitivo
+                    # Llamamos al motor espacial V2
                     gdf_filtrado = motor_espacial_v2(escala_sel, q_geo, territorios_objetivo)
                     
                     # 🛡️ ESCUDO ANTI-VACÍOS (Evita el error 'NoneType' y detiene la sábana blanca)
@@ -1951,6 +1960,28 @@ with tab_mapas:
                 import numpy as np
 
                 st.write("Auditoría de Datos a Pintar:", datos_para_dibujar[['Territorio', 'MATCH_ID', 'Total']].head())
+
+                # =========================================================
+                # 🔬 SONDA DE TELEMETRÍA (PUNTO DE CONTROL FINAL)
+                # =========================================================
+                st.error("🔬 **SONDA FORENSE DE PRE-RENDERIZADO:**")
+                
+                # 1. ¿Cuántos datos demográficos llegaron?
+                st.write(f"📊 **1. Datos Poblacionales (Tabla):** {datos_para_dibujar.shape[0]} filas.")
+                if not datos_para_dibujar.empty:
+                    st.dataframe(datos_para_dibujar[['Territorio', 'MATCH_ID', 'Total']].head())
+                
+                # 2. ¿Cuántos polígonos espaciales llegaron?
+                num_poligonos = len(mapa_para_dibujar.get('features', []))
+                st.write(f"🗺️ **2. Geometrías Espaciales (GeoJSON):** {num_poligonos} polígonos.")
+                if num_poligonos > 0:
+                    muestra_id = mapa_para_dibujar['features'][0].get('id', 'SIN ID')
+                    st.write(f"🔑 **Muestra de ID Espacial recibido:** `{muestra_id}`")
+                
+                if num_poligonos == 0 or datos_para_dibujar.shape[0] == 0:
+                    st.warning("⚠️ CORTOCIRCUITO DETECTADO: Una de las dos fuentes llegó vacía al renderizado.")
+                    st.stop()
+                # =========================================================
                 
                 if datos_para_dibujar['Total'].sum() == 0:
                     datos_para_dibujar['Color_Fix'] = 1 
