@@ -25,7 +25,7 @@ selectors.renderizar_menu_navegacion("Escenarios WEAP")
 # 4. SELECTOR ESPACIAL
 st.sidebar.markdown("---")
 # 🚀 FIX APLICADO: Invocamos el selector exigiendo la firma explícita para WEAP
-nombre_zona, gdf_zona, nivel_jerarquico, es_busqueda_global = selectors.render_selector_espacial(modo_firma="weap")
+ids_estaciones, nombre_zona, altitud_ref, gdf_zona, nivel_jerarquico = selectors.render_selector_espacial(modo_firma="weap")
 
 # 5. GUARDIA Y LÓGICA PRINCIPAL
 if nivel_jerarquico == "Estaciones":
