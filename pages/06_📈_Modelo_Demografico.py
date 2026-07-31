@@ -30,34 +30,6 @@ except ImportError:
     from modules import selectors
     from modules.utils import encender_gemelo_digital, normalizar_texto, cargar_capa_espacial_cache
 
-    # =====================================================================
-    # 🕵️‍♂️ ESCÁNER FORENSE DE SUPABASE (Buscar Municipios Perdidos)
-    # =====================================================================
-    with st.expander("🕵️‍♂️ ESCÁNER FORENSE DE LA BASE DE DATOS", expanded=True):
-        try:
-            from modules.db_manager import get_engine
-            import pandas as pd
-            
-            with get_engine().connect() as conn:
-                # Traemos absolutamente todo lo de Antioquia
-                df_bd = pd.read_sql("SELECT nombre_municipio, depto_nom FROM municipios WHERE depto_nom ILIKE '%%Antioquia%%' OR depto_nom IS NULL", conn)
-                
-            st.write(f"🛑 **Total de polígonos en la BD:** {len(df_bd)} (El DANE dice que Antioquia tiene 125)")
-            
-            # Filtramos cualquier cosa que se parezca a nuestros perdidos
-            sospechosos = df_bd[df_bd['nombre_municipio'].str.contains('Carol|Prínc|Princ|Andr|Cuerq', case=False, na=False)]
-            
-            if not sospechosos.empty:
-                st.success("✅ ¡Encontramos rastros! Así están escritos en Supabase:")
-                st.dataframe(sospechosos)
-            else:
-                st.error("🚨 ¡Cero coincidencias! Carolina y San Andrés no existen en la tabla 'municipios' de Supabase.")
-                
-        except Exception as e:
-            st.error(f"Error conectando a Supabase: {e}")
-    # =====================================================================
-
-
 # ==========================================
 # 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
 # ==========================================
