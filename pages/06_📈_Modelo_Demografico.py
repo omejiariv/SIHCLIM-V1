@@ -1697,8 +1697,8 @@ with tab_opt:
         else:
             st.caption("Presiona 'Optimizar Parámetros' o ajusta manualmente para visualizar las ecuaciones.")
             
-@st.cache_data(ttl=86400, show_spinner="🧩 Motor Espacial Definitivo (Sincronizando...)")
-def motor_espacial_v2(escala, q_geo_str, territorios_objetivo_tuple):
+@st.cache_data(ttl=86400, show_spinner="🧩 Motor Espacial V3 (Geometrías Definitivas...)")
+def motor_espacial_v3(escala, q_geo_str, territorios_objetivo_tuple):
     from sqlalchemy import text
     from modules.db_manager import get_engine
     import pandas as pd
@@ -1707,33 +1707,38 @@ def motor_espacial_v2(escala, q_geo_str, territorios_objetivo_tuple):
     from shapely import wkb, wkt
     from shapely.geometry import shape
     import json
-    from modules.utils import normalizar_texto
     import streamlit as st
 
     engine_geo = get_engine()
 
+    # 1. EXTRACCIÓN ROBUSTA (Primero PostGIS nativo, luego decodificador manual)
     try:
-        with engine_geo.connect() as conn:
-            df = pd.read_sql(text(q_geo_str), conn)
-        if df.empty: return None
+        gdf = gpd.read_postgis(text(q_geo_str), engine_geo.connect(), geom_col="geometry")
+    except Exception as e_pg:
+        try:
+            with engine_geo.connect() as conn:
+                df = pd.read_sql(text(q_geo_str), conn)
+            if df.empty: return None
 
-        geometries = []
-        for geom_val in df['geometry']:
-            if pd.isnull(geom_val): geometries.append(None); continue
-            geom_str = str(geom_val).strip()
-            try:
-                if geom_str.startswith('{'): geometries.append(shape(json.loads(geom_str)))
-                elif geom_str.startswith(('POLYGON', 'MULTIPOLYGON')): geometries.append(wkt.loads(geom_str))
-                else: geometries.append(wkb.loads(bytes.fromhex(geom_str)))
-            except: geometries.append(None)
+            geometries = []
+            for geom_val in df['geometry']:
+                if pd.isnull(geom_val): geometries.append(None); continue
+                geom_str = str(geom_val).strip()
+                try:
+                    if geom_str.startswith('{'): geometries.append(shape(json.loads(geom_str)))
+                    elif geom_str.startswith(('POLYGON', 'MULTIPOLYGON')): geometries.append(wkt.loads(geom_str))
+                    else: geometries.append(wkb.loads(bytes.fromhex(geom_str)))
+                except: geometries.append(None)
 
-        gdf = gpd.GeoDataFrame(df, geometry=geometries, crs="EPSG:4326").dropna(subset=['geometry'])
-    except Exception as e:
-        st.error(f"🚨 Error crítico de Base de Datos: {e}")
-        return None
+            gdf = gpd.GeoDataFrame(df, geometry=geometries, crs="EPSG:4326")
+        except Exception as e:
+            st.error(f"🚨 Error crítico BD: {e}")
+            return None
 
+    gdf = gdf.dropna(subset=['geometry'])
     if gdf.empty: return None
 
+    # 2. CONSTRUCCIÓN DE LLAVES (Usando la función GLOBAL correcta)
     def armar_id_geo(row):
         terr = normalizar_texto(row.get('territorio_temp', row.get('Territorio_Temp', '')))
         padre = normalizar_texto(row.get('padre_temp', row.get('Padre_Temp', '')))
@@ -1749,11 +1754,11 @@ def motor_espacial_v2(escala, q_geo_str, territorios_objetivo_tuple):
     db_ids = gdf['MATCH_ID'].tolist()
     territorios_validos = []
 
+    # 3. ALGORITMO SANADOR
     for objetivo in objetivos:
         if objetivo in db_ids:
             territorios_validos.append(objetivo)
         else:
-            # Tolerancia MUY estricta (0.85) para no inventar emparejamientos
             matches = difflib.get_close_matches(objetivo, db_ids, n=1, cutoff=0.85)
             if matches:
                 gdf.loc[gdf['MATCH_ID'] == matches[0], 'MATCH_ID'] = objetivo
@@ -1888,7 +1893,7 @@ with tab_mapas:
                 # 🌍 VÍA LENTA: POSTGIS CON CACHÉ DE UNIÓN TOPOLÓGICA
                 # =========================================================
                 else:
-                    # 🚀 ENRUTADOR ESPACIAL BLINDADO V3 (Restaurado a la coherencia jerárquica)
+                    # 🚀 ENRUTADOR ESPACIAL BLINDADO V3 
                     if "veredal" in escala_sel.lower(): 
                         q_geo = "SELECT nombre_ver AS territorio_temp, nomb_mpio AS padre_temp, geometry FROM veredas_geometria WHERE geometry IS NOT NULL"
                         
@@ -1901,19 +1906,8 @@ with tab_mapas:
                         else:
                             q_geo = "SELECT nom_nss3 AS territorio_temp, nss3 AS padre_temp, geometry FROM cuencas WHERE geometry IS NOT NULL AND nom_nss3 IS NOT NULL"
                             
-                    elif "departamental" in escala_sel.lower() or "nacional" in escala_sel.lower():
-                        q_geo = "SELECT depto_nom AS territorio_temp, 'colombia' AS padre_temp, geometry FROM municipios WHERE geometry IS NOT NULL AND depto_nom IS NOT NULL"
-                        
-                    elif "regional" in escala_sel.lower() or "macrorregiones" in escala_sel.lower():
-                        q_geo = "SELECT region AS territorio_temp, 'colombia' AS padre_temp, geometry FROM municipios WHERE geometry IS NOT NULL AND region IS NOT NULL"
-                        
-                    elif "subregiones" in escala_sel.lower():
-                        q_geo = "SELECT subregion AS territorio_temp, depto_nom AS padre_temp, geometry FROM municipios WHERE geometry IS NOT NULL AND subregion IS NOT NULL"
-                        
-                    elif "corporaciones" in escala_sel.lower() or "cars" in escala_sel.lower():
-                        q_geo = "SELECT CASE WHEN subregion ILIKE '%aburr%' THEN 'AMVA' ELSE car END AS territorio_temp, depto_nom AS padre_temp, geometry FROM municipios WHERE geometry IS NOT NULL AND car IS NOT NULL"
-                        
                     else: 
+                        # 🚀 Mantenemos la pureza: pedir SIEMPRE municipios
                         q_geo = "SELECT nombre_municipio AS territorio_temp, depto_nom AS padre_temp, geometry FROM municipios WHERE geometry IS NOT NULL AND nombre_municipio IS NOT NULL"
 
                     df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
@@ -1924,8 +1918,8 @@ with tab_mapas:
                     
                     territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().tolist())
                     
-                    # Llamamos al motor espacial V2
-                    gdf_filtrado = motor_espacial_v2(escala_sel, q_geo, territorios_objetivo)
+                    # 🚀 AQUÍ EL CAMBIO: LLAMAMOS AL MOTOR V3
+                    gdf_filtrado = motor_espacial_v3(escala_sel, q_geo, territorios_objetivo)
                     
                     # 🛡️ ESCUDO ANTI-VACÍOS (Evita el error 'NoneType' y detiene la sábana blanca)
                     if gdf_filtrado is None or gdf_filtrado.empty:
