@@ -414,7 +414,7 @@ with tab_mapa:
                         ))
                         
                         # 🚀 LLAMADO ACTUALIZADO AL LÍMITE Y MUNICIPIOS EN BASE DE DATOS
-                        add_context_layers_robust(fig, gdf_zona, ver_municipios)
+                        add_context_layers_robust(fig, gdf_zona, ver_cuencas, ver_municipios)
                         
                         fig.add_trace(go.Scatter(
                             x=df_final['lon_calc'], y=df_final['lat_calc'], mode='markers',
