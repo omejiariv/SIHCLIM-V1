@@ -3973,26 +3973,38 @@ def display_drought_analysis_tab(df_long, gdf_stations, **kwargs):
         # 🚀 FIX: Caja de Pronóstico ENSO Dinámica (Conectada al Pulso Climático Global)
         # Extraemos los datos reales en vivo que ya están en la sesión de la app
         enso_phase = st.session_state.get('enso_fase_actual', 'Neutro')
-        enso_probs = st.session_state.get('enso_probabilidades', {'nino': 0, 'neutro': 100, 'nina': 0})
         
-        # Determinamos cuál es la condición dominante y su porcentaje
+        # Garantizamos que enso_probs sea un diccionario válido para evitar caídas
+        enso_probs = st.session_state.get('enso_probabilidades', {})
+        if not isinstance(enso_probs, dict):
+            enso_probs = {'nino': 0, 'neutro': 100, 'nina': 0}
+        
+        # Determinamos condición dominante, porcentaje, gramática y color del mensaje
         if enso_phase == 'Niño':
             prob_dominante = enso_probs.get('nino', 0)
+            fase_nombre = "El Niño"
             mensaje_riesgo = "lo que incrementa el riesgo de **déficit hídrico, sequías y aumento de temperaturas** en la región Andina."
-            color_alerta = "🚨" # Alerta roja/naranja para sequía
+            color_alerta = "🚨" # Alerta para sequía
+            tipo_caja = st.warning # Caja amarilla de advertencia
+            
         elif enso_phase == 'Niña':
             prob_dominante = enso_probs.get('nina', 0)
+            fase_nombre = "La Niña"
             mensaje_riesgo = "lo que incrementaría el riesgo de **excesos hídricos, avenidas torrenciales y deslizamientos** en la región Andina."
-            color_alerta = "🌧️" # Alerta azul/lluvia para La Niña
+            color_alerta = "🌧️" # Alerta para lluvias
+            tipo_caja = st.warning # Caja amarilla de advertencia
+            
         else:
-            prob_dominante = enso_probs.get('neutro', 0)
+            prob_dominante = enso_probs.get('neutro', 100)
+            fase_nombre = "Neutra"
             mensaje_riesgo = "lo que indica una tendencia hacia la **normalidad climática**, sujeta a variabilidades locales intraestacionales."
             color_alerta = "📢"
+            tipo_caja = st.info # Caja azul informativa
 
-        # Pintamos la caja de advertencia con los datos en tiempo real
-        st.info(f"""
+        # Pintamos la caja de advertencia ejecutando dinámicamente el tipo_caja
+        tipo_caja(f"""
         {color_alerta} **Pronóstico ENSO Actualizado (IRI/CPC):**
-        Según el último reporte sincronizado, nos encontramos en una fase de **El {enso_phase}** (o tendencia hacia ella), 
+        Según el último reporte sincronizado, nos encontramos en una fase **{fase_nombre}** (o tendencia hacia ella), 
         con una **probabilidad del {prob_dominante:.0f}%** para el trimestre actual, {mensaje_riesgo} 
         Se recomienda monitorear los boletines oficiales del IDEAM y ajustar los planes de seguridad hídrica.
         """)
