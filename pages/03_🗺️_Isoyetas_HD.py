@@ -169,7 +169,7 @@ def calcular_pronostico(df_anual, target_year):
             except: pass
     return pd.DataFrame(proyecciones)
 
-def generar_analisis_texto_corregido(df_stats, tipo_analisis):
+def generar_analisis_texto_corregido(df_stats, tipo_analisis, config_text):
     if df_stats.empty: return "No hay datos suficientes."
     avg_val = df_stats['valor'].mean()
     min_val = df_stats['valor'].min()
@@ -187,14 +187,18 @@ def generar_analisis_texto_corregido(df_stats, tipo_analisis):
     else: conclusion = "una **fuerte variabilidad orográfica**."
     
     return f"""
-    ### 📝 Análisis Automático
-    * **Promedio:** {avg_val:,.0f} mm
-    * **Rango:** {diff:,.0f} mm
-    * **Conclusión:** El territorio presenta {conclusion}
-    * **Máximo:** {est_max} ({max_val:,.0f} mm)
-    * **Mínimo:** {est_min} ({min_val:,.0f} mm)
-    """
+    ### 📝 Análisis Automático y Metadatos
+    **⚙️ Parámetros de Modelación:**
+    {config_text}
 
+    **📊 Resultados Estadísticos:**
+    * **Promedio Territorial:** {avg_val:,.0f} mm/año
+    * **Rango de Variabilidad:** {diff:,.0f} mm
+    * **Punto más Húmedo:** {est_max} ({max_val:,.0f} mm)
+    * **Punto más Seco:** {est_min} ({min_val:,.0f} mm)
+    * **Conclusión:** El territorio presenta {conclusion}
+    """
+    
 def generar_raster_ascii(grid_z, minx, miny, cellsize, nrows, ncols):
     header = f"ncols        {ncols}\nnrows        {nrows}\nxllcorner    {minx}\nyllcorner    {miny}\ncellsize     {cellsize}\nNODATA_value -9999\n"
     grid_fill = np.nan_to_num(grid_z.T, nan=-9999)
@@ -383,7 +387,16 @@ with tab_mapa:
                         fig.update_layout(title=tit, height=650, margin=dict(l=0,r=0,t=40,b=0), xaxis=dict(visible=False, scaleanchor="y", scaleratio=1), yaxis=dict(visible=False), plot_bgcolor='white', dragmode='pan')
                         st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True})
                         
-                        st.info(generar_analisis_texto_corregido(df_final, tipo_analisis))
+                        # 🚀 FIX: Capturar el estado del sidebar para la trazabilidad
+                        txt_var = f" (Variograma: {modelo_var_seleccionado})" if "Kriging" in metodo_seleccionado else ""
+                        
+                        if tipo_analisis == "Año Específico": txt_tiempo = f"Año {params_analisis['year']}"
+                        elif tipo_analisis in ["Promedio Multianual", "Variabilidad Temporal"]: txt_tiempo = f"Periodo {params_analisis['start']} - {params_analisis['end']}"
+                        else: txt_tiempo = f"Proyección {params_analisis.get('target', '')}"
+                        
+                        config_str = f"> *Método:* **{metodo_seleccionado}** {txt_var} | *Temporalidad:* **{txt_tiempo}** | *Radio de Búsqueda:* **{buffer_km} km** | *Estaciones usadas:* **{len(df_final)}**"
+                        
+                        st.info(generar_analisis_texto_corregido(df_final, tipo_analisis, config_str))
                 else:
                     st.warning("⚠️ Quedaron menos de 3 estaciones válidas después de aplicar los filtros de calidad temporal para este año.")
             
