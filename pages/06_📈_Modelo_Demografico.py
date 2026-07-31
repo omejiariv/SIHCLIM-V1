@@ -42,7 +42,7 @@ st.title("📈 Modelo Demográfico Integral (Proyección y Dasimetría)")
 st.markdown("Ajuste matemático, simulación animada, mapas espaciales y proyección top-down de estructuras poblacionales (1952-2100).")
 
 # =====================================================================
-# 🕵️‍♂️ ESCÁNER FORENSE DE SUPABASE (Buscar Municipios Perdidos)
+# 🕵️‍♂️ ESCÁNER FORENSE DE SUPABASE (Rayos X de Geometrías)
 # =====================================================================
 with st.expander("🕵️‍♂️ ESCÁNER FORENSE DE LA BASE DE DATOS", expanded=True):
     try:
@@ -50,19 +50,16 @@ with st.expander("🕵️‍♂️ ESCÁNER FORENSE DE LA BASE DE DATOS", expand
         import pandas as pd
         
         with get_engine().connect() as conn:
-            # Traemos absolutamente todo lo de Antioquia
-            df_bd = pd.read_sql("SELECT nombre_municipio, depto_nom FROM municipios WHERE depto_nom ILIKE '%%Antioquia%%' OR depto_nom IS NULL", conn)
+            # 🚀 Añadimos (geometry IS NULL) para saber si el polígono existe
+            df_bd = pd.read_sql("SELECT nombre_municipio, depto_nom, (geometry IS NULL) as sin_geometria FROM municipios WHERE depto_nom ILIKE '%%Antioquia%%' OR depto_nom IS NULL", conn)
             
-        st.write(f"🛑 **Total de polígonos en la BD:** {len(df_bd)} (El DANE dice que Antioquia tiene 125)")
+        st.write(f"🛑 **Total de polígonos en la BD:** {len(df_bd)} (Antioquia tiene 125)")
         
-        # Filtramos cualquier cosa que se parezca a nuestros perdidos
         sospechosos = df_bd[df_bd['nombre_municipio'].str.contains('Carol|Prínc|Princ|Andr|Cuerq', case=False, na=False)]
         
         if not sospechosos.empty:
-            st.success("✅ ¡Encontramos rastros! Así están escritos en Supabase:")
+            st.success("✅ Resultados del Escáner (Revisa la columna 'sin_geometria'):")
             st.dataframe(sospechosos)
-        else:
-            st.error("🚨 ¡Cero coincidencias! Carolina y San Andrés no existen en la tabla 'municipios' de Supabase.")
             
     except Exception as e:
         st.error(f"Error conectando a Supabase: {e}")
@@ -94,7 +91,7 @@ def normalizar_texto(texto):
     
     # 🚀 FIX FORENSE (El Escudo contra Difflib)
     if t.startswith("CAROLINA"): t = "CAROLINA"
-    elif t.startswith("SANANDRES"): t = "SANANDRES"
+    elif t.startswith("SANANDR"): t = "SANANDRES" # Modificado para atrapar el error
     
     diccionario_rebeldes = {
         "BOGOTADC": "BOGOTA", "SANJOSEDECUCUTA": "CUCUTA", "LAGUAJIRA": "GUAJIRA", 
