@@ -124,25 +124,42 @@ def obtener_estaciones_enriquecidas():
     except Exception as e:
         return pd.DataFrame(), False
 
-def get_name_from_row_v2(row, type_layer):
-    cols_map = {c.lower(): c for c in row.index.tolist()}
-    targets = ['mpio_cnmbr', 'municipio', 'nombre', 'mpio_nomb'] if type_layer == 'muni' else ['n-nss3', 'n_nss3', 'subc_lbl', 'nom_cuenca', 'nombre']
-    for t in targets:
-        if t in cols_map: return row[cols_map[t]]
-    return "Desconocido"
+# 🚀 FIX V3.0: Descarga de municipios directo desde tu base de datos PostGIS
+@st.cache_data(ttl=3600)
+def obtener_municipios_db():
+    try:
+        from modules import db_manager
+        engine = db_manager.get_engine()
+        # ST_Simplify reduce el peso geométrico para que el mapa renderice volando
+        return gpd.read_postgis("SELECT nombre_municipio, ST_Simplify(geometry, 0.005) as geom FROM municipios WHERE depto_nom ILIKE '%%Antioquia%%'", engine, geom_col='geom')
+    except Exception as e:
+        return None
 
-def add_context_layers_robust(fig, show_cuencas=True, show_muni=False):
+# 🚀 FIX V3.0: Función de renderizado espacial conectada a la variable del selector
+def add_context_layers_robust(fig, gdf_zona_actual, show_muni=False):
+    # 1. SIEMPRE DIBUJAR LA FRONTERA DEL TERRITORIO SELECCIONADO (El Límite Fuerte)
+    if gdf_zona_actual is not None and not gdf_zona_actual.empty:
+        gdf_z = gdf_zona_actual.to_crs("EPSG:4326")
+        for _, r in gdf_z.iterrows():
+            geom = r.geometry
+            polys = [geom] if geom.geom_type == 'Polygon' else list(geom.geoms)
+            for p in polys:
+                x, y = p.exterior.xy
+                # Límite principal en negro para resaltar tu zona de estudio
+                fig.add_trace(go.Scatter(x=list(x), y=list(y), mode='lines', line=dict(width=3, color='rgba(0,0,0,0.8)'), name="Límite del Territorio", hoverinfo='skip'))
+    
+    # 2. DIBUJAR LOS MUNICIPIOS DE FONDO SI EL USUARIO LO ACTIVA EN EL SIDEBAR
     if show_muni:
-        gdf_m = load_geojson_cached("MunicipiosAntioquia.geojson")
+        gdf_m = obtener_municipios_db()
         if gdf_m is not None:
-            gdf_m['geom_simp'] = gdf_m.geometry.simplify(0.001)
+            gdf_m = gdf_m.to_crs("EPSG:4326")
             for _, r in gdf_m.iterrows():
-                name = get_name_from_row_v2(r, 'muni')
-                polys = [r['geom_simp']] if r['geom_simp'].geom_type == 'Polygon' else list(r['geom_simp'].geoms)
+                if r['geom'] is None: continue
+                polys = [r['geom']] if r['geom'].geom_type == 'Polygon' else list(r['geom'].geoms)
                 for p in polys:
                     x, y = p.exterior.xy
-                    fig.add_trace(go.Scatter(x=list(x), y=list(y), mode='lines', line=dict(width=1.0, color='rgba(50, 50, 50, 0.6)', dash='dot'), text=f"🏙️ {name}", hoverinfo='text', showlegend=False))
-    
+                    # Fronteras municipales en gris punteado suave
+                    fig.add_trace(go.Scatter(x=list(x), y=list(y), mode='lines', line=dict(width=0.7, color='rgba(100, 100, 100, 0.5)', dash='dot'), hoverinfo='skip', showlegend=False))    
     if show_cuencas:
         gdf_cu = load_geojson_cached("SubcuencasAinfluencia.geojson")
         if gdf_cu is not None:
