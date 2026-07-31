@@ -3970,11 +3970,31 @@ def display_drought_analysis_tab(df_long, gdf_stations, **kwargs):
         # 1. ENCABEZADO Y PRONÓSTICO ENSO
         st.markdown("#### 🗺️ Índice de Vulnerabilidad a la Variabilidad Climática (IVC)")
         
-        # Caja de Pronóstico ENSO (Solicitud #5)
-        st.warning("""
-        📢 **Pronóstico ENSO (Próximos 6 Meses):**
-        Según el último reporte del IRI/CPC, existe una **Probabilidad del 60% de condiciones de La Niña** hacia el final del año, 
-        lo que incrementaría el riesgo de excesos hídricos en la región Andina. Se recomienda monitorear los boletines oficiales del IDEAM.
+        # 🚀 FIX: Caja de Pronóstico ENSO Dinámica (Conectada al Pulso Climático Global)
+        # Extraemos los datos reales en vivo que ya están en la sesión de la app
+        enso_phase = st.session_state.get('enso_fase_actual', 'Neutro')
+        enso_probs = st.session_state.get('enso_probabilidades', {'nino': 0, 'neutro': 100, 'nina': 0})
+        
+        # Determinamos cuál es la condición dominante y su porcentaje
+        if enso_phase == 'Niño':
+            prob_dominante = enso_probs.get('nino', 0)
+            mensaje_riesgo = "lo que incrementa el riesgo de **déficit hídrico, sequías y aumento de temperaturas** en la región Andina."
+            color_alerta = "🚨" # Alerta roja/naranja para sequía
+        elif enso_phase == 'Niña':
+            prob_dominante = enso_probs.get('nina', 0)
+            mensaje_riesgo = "lo que incrementaría el riesgo de **excesos hídricos, avenidas torrenciales y deslizamientos** en la región Andina."
+            color_alerta = "🌧️" # Alerta azul/lluvia para La Niña
+        else:
+            prob_dominante = enso_probs.get('neutro', 0)
+            mensaje_riesgo = "lo que indica una tendencia hacia la **normalidad climática**, sujeta a variabilidades locales intraestacionales."
+            color_alerta = "📢"
+
+        # Pintamos la caja de advertencia con los datos en tiempo real
+        st.info(f"""
+        {color_alerta} **Pronóstico ENSO Actualizado (IRI/CPC):**
+        Según el último reporte sincronizado, nos encontramos en una fase de **El {enso_phase}** (o tendencia hacia ella), 
+        con una **probabilidad del {prob_dominante:.0f}%** para el trimestre actual, {mensaje_riesgo} 
+        Se recomienda monitorear los boletines oficiales del IDEAM y ajustar los planes de seguridad hídrica.
         """)
 
         # 2. METODOLOGÍA DESPLEGABLE (Solicitud #2 y #4)
