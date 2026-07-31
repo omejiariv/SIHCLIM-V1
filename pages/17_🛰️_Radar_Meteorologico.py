@@ -26,7 +26,7 @@ except:
 selectors.renderizar_menu_navegacion("Radar Meteorológico")
 
 # 🚀 FIX: Traer de vuelta los selectores geográficos al panel lateral
-ids_sel, nombre_zona, alt_ref, gdf_zona = selectors.render_selector_espacial()
+ids_sel, nombre_zona, alt_ref, gdf_zona, nivel_jerarquico = selectors.render_selector_espacial()
 
 # --- 4. INTERFAZ DEL CENTRO DE COMANDO ---
 st.title("🛰️ Centro de Observación Atmosférica (Tiempo Real)")
