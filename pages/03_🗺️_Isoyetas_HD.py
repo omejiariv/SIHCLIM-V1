@@ -60,9 +60,15 @@ if "Kriging" in metodo_seleccionado:
 # --- 3. SELECTOR ESPACIAL GLOBAL ---
 ids_sel, nombre_zona, alt_ref, gdf_zona, nivel_jerarquico = selectors.render_selector_espacial()
 
-if not ids_sel or gdf_zona is None or gdf_zona.empty:
+# 🚀 FIX FORENSE: Barrera suavizada. Validamos contra el nombre, no contra ids_sel
+# porque en escalas departamentales o macro-regionales ids_sel puede llegar vacío intencionalmente.
+if not nombre_zona or nombre_zona == "-- Seleccione --":
     st.info("👈 Seleccione un Territorio (Cuenca, Municipio o Región) en el menú lateral para iniciar.")
     st.stop()
+    
+# Nos aseguramos de que ids_sel sea al menos una tupla vacía para no romper la consulta SQL
+if not ids_sel: 
+    ids_sel = ('0',) # Un ID falso para que el SQL no colapse con IN ()
 
 # --- 4. FUNCIONES DE SOPORTE ---
 @st.cache_data(ttl=3600)
