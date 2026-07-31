@@ -68,6 +68,9 @@ def normalizar_texto(texto):
     # 2. Quitar tildes y dejar solo letras, números Y GUIONES BAJOS
     t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
     t = re.sub(r'[^A-Z0-9_]', '', t)
+    # 🚀 FIX FORENSE (El Escudo contra Difflib)
+    if t.startswith("CAROLINA"): t = "CAROLINA"
+    elif t.startswith("SANANDRES"): t = "SANANDRES"
     
     # 3. Traductor DANE-IGAC Actualizado
     diccionario_rebeldes = {
@@ -1759,7 +1762,7 @@ def motor_espacial_v3(escala, q_geo_str, territorios_objetivo_tuple):
         if objetivo in db_ids:
             territorios_validos.append(objetivo)
         else:
-            matches = difflib.get_close_matches(objetivo, db_ids, n=1, cutoff=0.85)
+            matches = difflib.get_close_matches(objetivo, db_ids, n=1, cutoff=0.90)
             if matches:
                 gdf.loc[gdf['MATCH_ID'] == matches[0], 'MATCH_ID'] = objetivo
                 territorios_validos.append(objetivo)
