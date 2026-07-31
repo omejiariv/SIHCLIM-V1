@@ -60,8 +60,7 @@ if "Kriging" in metodo_seleccionado:
 # --- 3. SELECTOR ESPACIAL GLOBAL ---
 ids_sel, nombre_zona, alt_ref, gdf_zona, nivel_jerarquico = selectors.render_selector_espacial()
 
-# 🚀 FIX FORENSE: Barrera suavizada. Validamos contra el nombre, no contra ids_sel
-# porque en escalas departamentales o macro-regionales ids_sel puede llegar vacío intencionalmente.
+# 🚀 FIX: Suavizamos la barrera. Dejamos pasar el polígono aunque venga sin estaciones.
 if not nombre_zona or nombre_zona == "-- Seleccione --":
     st.info("👈 Seleccione un Territorio (Cuenca, Municipio o Región) en el menú lateral para iniciar.")
     st.stop()
@@ -232,8 +231,8 @@ ignore_nulls = c2.checkbox("🚫 No Nulos", value=True)
 do_interp_temp = False
 if complete_series: do_interp_temp = st.sidebar.checkbox("🔄 Interpolación Temporal", value=False)
 
-# --- 6. METADATOS ---
-with st.spinner("Cargando catálogo..."):
+# --- 6. METADATOS Y ÁREA DE INFLUENCIA (BUFFER) ---
+with st.spinner("Cargando catálogo de estaciones..."):
     gdf_meta, _ = obtener_estaciones_enriquecidas()
 
 col_id = detectar_columna(gdf_meta, ['id_estacion', 'codigo']) or 'id_estacion'
@@ -242,11 +241,40 @@ col_muni = detectar_columna(gdf_meta, ['municipio', 'mpio'])
 col_alt = detectar_columna(gdf_meta, ['altitud' , 'alt_est'])
 col_cuenca = 'CUENCA_GIS' if 'CUENCA_GIS' in gdf_meta.columns else None
 
+st.sidebar.markdown("---")
+st.sidebar.subheader("🎯 Área de Influencia (Buffer)")
+buffer_km = st.sidebar.slider("Radio de Expansión (km):", min_value=0, max_value=50, value=15, step=5, 
+                              help="Si el territorio está vacío, aumenta este radio para atrapar estaciones vecinas.")
+
+# 🚀 FIX: Recalcular 'ids_sel' expandiendo el polígono geométricamente
+if gdf_zona is not None and not gdf_zona.empty and not gdf_meta.empty:
+    try:
+        # Reproyectamos a MAGNA-SIRGAS (EPSG:3116) para medir kilómetros reales
+        gdf_zona_metric = gdf_zona.to_crs(epsg=3116)
+        gdf_meta_metric = gdf_meta.to_crs(epsg=3116)
+        
+        # Expandimos el polígono (convertimos km a metros)
+        zona_buffered = gdf_zona_metric.buffer(buffer_km * 1000)
+        
+        # Encontramos cuáles estaciones caen dentro de la zona expandida
+        gdf_buffer = gpd.GeoDataFrame(geometry=zona_buffered, crs="EPSG:3116")
+        estaciones_dentro = gpd.sjoin(gdf_meta_metric, gdf_buffer, how="inner", predicate="intersects")
+        
+        # Actualizamos la lista oficial de estaciones para el SQL
+        ids_sel = estaciones_dentro[col_id].unique().tolist()
+        st.sidebar.success(f"📡 Estaciones en el radar: {len(ids_sel)}")
+    except Exception as e:
+        st.sidebar.error(f"Error en buffer espacial: {e}")
+
+# Escudo Anti-Colapso: Si el buffer en 0km sigue vacío, ponemos un ID falso para no quebrar el SQL
+if not ids_sel: ids_sel = ['0']
+
 # --- 7. LÓGICA ESPACIAL SINCRONIZADA ---
 tab_mapa, tab_datos = st.tabs(["🗺️ Visualización Espacial", "💾 Descargas GIS"])
 
 with tab_mapa:
     try:
+        df_agg = pd.DataFrame() # 🛡️ ESCUDO: Inicializamos vacío para evitar errores si no hay estaciones
         engine = db_manager.get_engine()
         
         ids_clean = [str(i).replace("'", "") for i in ids_sel] 
