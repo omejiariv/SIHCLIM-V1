@@ -1774,7 +1774,37 @@ def motor_espacial_v3(escala, q_geo_str, territorios_objetivo_tuple):
         gdf_filtrado = gdf_filtrado.dissolve(by='MATCH_ID').reset_index()
 
     return gdf_filtrado
-    
+
+    # =====================================================================
+    # 🕵️‍♂️ SONDA RASTREADORA DE POLÍGONOS PERDIDOS
+    # =====================================================================
+    try:
+        from modules.db_manager import get_engine
+        import pandas as pd
+        with get_engine().connect() as conn:
+            # Traemos todo lo que huela a Antioquia o que no tenga departamento
+            df_bd = pd.read_sql("SELECT nombre_municipio, depto_nom FROM municipios WHERE depto_nom ILIKE '%%Antioquia%%' OR depto_nom IS NULL", conn)
+            
+            # Buscamos cualquier fragmento de palabra, sin importar mayúsculas o tildes
+            carolina_bd = df_bd[df_bd['nombre_municipio'].str.contains('Carol|Prínc|Princ', case=False, na=False)]
+            sanandres_bd = df_bd[df_bd['nombre_municipio'].str.contains('Andr|Cuerq', case=False, na=False)]
+            
+            st.error("🕵️‍♂️ **RESULTADOS DE LA BÚSQUEDA FORENSE EN SUPABASE:**")
+            
+            col_s1, col_s2 = st.columns(2)
+            with col_s1:
+                st.write("🔎 **Buscando a Carolina del Príncipe:**")
+                if carolina_bd.empty: st.warning("¡ALERTA! Carolina NO EXISTE en la base de datos.")
+                else: st.dataframe(carolina_bd)
+                
+            with col_s2:
+                st.write("🔎 **Buscando a San Andrés de Cuerquia:**")
+                if sanandres_bd.empty: st.warning("¡ALERTA! San Andrés NO EXISTE en la base de datos.")
+                else: st.dataframe(sanandres_bd)
+    except Exception as e:
+        st.write(f"Error en la sonda: {e}")
+    # =====================================================================
+
 # ==========================================
 # PESTAÑA 3: MAPA DEMOGRÁFICO (GEOVISOR ZERO-CONFIG)
 # ==========================================
