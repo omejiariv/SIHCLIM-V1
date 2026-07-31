@@ -135,8 +135,8 @@ def obtener_municipios_db():
     except Exception as e:
         return None
 
-# 🚀 FIX V3.0: Función de renderizado espacial conectada a la variable del selector
-def add_context_layers_robust(fig, gdf_zona_actual, show_muni=False):
+# 🚀 FIX V3.0: Función de renderizado espacial COMPLETA (Límite, Cuencas y Municipios)
+def add_context_layers_robust(fig, gdf_zona_actual, show_cuencas=False, show_muni=False):
     # 1. SIEMPRE DIBUJAR LA FRONTERA DEL TERRITORIO SELECCIONADO (El Límite Fuerte)
     if gdf_zona_actual is not None and not gdf_zona_actual.empty:
         gdf_z = gdf_zona_actual.to_crs("EPSG:4326")
@@ -145,10 +145,28 @@ def add_context_layers_robust(fig, gdf_zona_actual, show_muni=False):
             polys = [geom] if geom.geom_type == 'Polygon' else list(geom.geoms)
             for p in polys:
                 x, y = p.exterior.xy
-                # Límite principal en negro para resaltar tu zona de estudio
+                # Límite principal en negro grueso para resaltar la zona de estudio
                 fig.add_trace(go.Scatter(x=list(x), y=list(y), mode='lines', line=dict(width=3, color='rgba(0,0,0,0.8)'), name="Límite del Territorio", hoverinfo='skip'))
     
-    # 2. DIBUJAR LOS MUNICIPIOS DE FONDO SI EL USUARIO LO ACTIVA EN EL SIDEBAR
+    # 2. DIBUJAR CAPA DE CUENCAS SI EL USUARIO LO ACTIVA
+    if show_cuencas:
+        gdf_cu = load_geojson_cached("SubcuencasAinfluencia.geojson")
+        if gdf_cu is not None:
+            gdf_cu = gdf_cu.to_crs("EPSG:4326")
+            # Simplificación ligera para no saturar la memoria
+            gdf_cu['geom_simp'] = gdf_cu.geometry.simplify(0.001)
+            
+            for _, r in gdf_cu.iterrows():
+                # Rescatamos el nombre dinámicamente sin usar la función vieja
+                name = r.get('n-nss3', r.get('n_nss3', r.get('nombre', 'Cuenca')))
+                
+                polys = [r['geom_simp']] if r['geom_simp'].geom_type == 'Polygon' else list(r['geom_simp'].geoms)
+                for p in polys:
+                    x, y = p.exterior.xy
+                    # Cuencas con línea azul
+                    fig.add_trace(go.Scatter(x=list(x), y=list(y), mode='lines', line=dict(width=1.5, color='rgba(0, 100, 255, 0.8)'), text=f"🌊 {name}", hoverinfo='text', showlegend=False))
+
+    # 3. DIBUJAR CAPA DE MUNICIPIOS SI EL USUARIO LO ACTIVA (Desde PostGIS)
     if show_muni:
         gdf_m = obtener_municipios_db()
         if gdf_m is not None:
@@ -158,18 +176,8 @@ def add_context_layers_robust(fig, gdf_zona_actual, show_muni=False):
                 polys = [r['geom']] if r['geom'].geom_type == 'Polygon' else list(r['geom'].geoms)
                 for p in polys:
                     x, y = p.exterior.xy
-                    # Fronteras municipales en gris punteado suave
-                    fig.add_trace(go.Scatter(x=list(x), y=list(y), mode='lines', line=dict(width=0.7, color='rgba(100, 100, 100, 0.5)', dash='dot'), hoverinfo='skip', showlegend=False))    
-    if show_cuencas:
-        gdf_cu = load_geojson_cached("SubcuencasAinfluencia.geojson")
-        if gdf_cu is not None:
-            gdf_cu['geom_simp'] = gdf_cu.geometry.simplify(0.001)
-            for _, r in gdf_cu.iterrows():
-                name = get_name_from_row_v2(r, 'cuenca')
-                polys = [r['geom_simp']] if r['geom_simp'].geom_type == 'Polygon' else list(r['geom_simp'].geoms)
-                for p in polys:
-                    x, y = p.exterior.xy
-                    fig.add_trace(go.Scatter(x=list(x), y=list(y), mode='lines', line=dict(width=1.5, color='rgba(0, 100, 255, 0.8)'), text=f"🌊 {name}", hoverinfo='text', showlegend=False))
+                    # Municipios con línea gris punteada
+                    fig.add_trace(go.Scatter(x=list(x), y=list(y), mode='lines', line=dict(width=0.7, color='rgba(100, 100, 100, 0.5)', dash='dot'), hoverinfo='skip', showlegend=False))
 
 # RESTAURADO: Funciones auxiliares
 def calcular_pronostico(df_anual, target_year):
