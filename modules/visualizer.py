@@ -3970,45 +3970,48 @@ def display_drought_analysis_tab(df_long, gdf_stations, **kwargs):
         # 1. ENCABEZADO Y PRONÓSTICO ENSO
         st.markdown("#### 🗺️ Índice de Vulnerabilidad a la Variabilidad Climática (IVC)")
         
-        # 🚀 FIX: Caja de Pronóstico ENSO Dinámica (Conectada al Pulso Climático Global)
-        # Extraemos los datos reales en vivo que ya están en la sesión de la app
-        enso_phase = st.session_state.get('enso_fase_actual', 'Neutro')
-        
-        # Garantizamos que enso_probs sea un diccionario válido para evitar caídas
-        enso_probs = st.session_state.get('enso_probabilidades', {})
-        if not isinstance(enso_probs, dict):
-            enso_probs = {'nino': 0, 'neutro': 100, 'nina': 0}
-        
-        # Determinamos condición dominante, porcentaje, gramática y color del mensaje
-        if enso_phase == 'Niño':
-            prob_dominante = enso_probs.get('nino', 0)
-            fase_nombre = "El Niño"
-            mensaje_riesgo = "lo que incrementa el riesgo de **déficit hídrico, sequías y aumento de temperaturas** en la región Andina."
-            color_alerta = "🚨" # Alerta para sequía
-            tipo_caja = st.warning # Caja amarilla de advertencia
+        # 🚀 FIX: Conexión DIRECTA a la API de Clima para evitar variables fantasma
+        try:
+            from modules.climate_api import get_iri_enso_forecast
             
-        elif enso_phase == 'Niña':
-            prob_dominante = enso_probs.get('nina', 0)
-            fase_nombre = "La Niña"
-            mensaje_riesgo = "lo que incrementaría el riesgo de **excesos hídricos, avenidas torrenciales y deslizamientos** en la región Andina."
-            color_alerta = "🌧️" # Alerta para lluvias
-            tipo_caja = st.warning # Caja amarilla de advertencia
+            # Llamamos a la API (o al caché ultrarrápido) y extraemos la tabla
+            df_probs, _ = get_iri_enso_forecast()
+            trimestre_actual = df_probs.iloc[0] # Tomamos la primera fila (Trimestre actual)
             
-        else:
-            prob_dominante = enso_probs.get('neutro', 100)
-            fase_nombre = "Neutra"
-            mensaje_riesgo = "lo que indica una tendencia hacia la **normalidad climática**, sujeta a variabilidades locales intraestacionales."
-            color_alerta = "📢"
-            tipo_caja = st.info # Caja azul informativa
+            p_nino = float(trimestre_actual['El Niño'])
+            p_nina = float(trimestre_actual['La Niña'])
+            p_neutro = float(trimestre_actual['Neutral'])
+            
+            # El motor decide matemáticamente cuál es la fase dominante
+            max_p = max(p_nino, p_nina, p_neutro)
+            
+            if max_p == p_nino:
+                fase_nombre = "El Niño"
+                color_alerta = "🚨"
+                tipo_caja = st.warning
+                mensaje_riesgo = "lo que incrementa el riesgo de **déficit hídrico, sequías y aumento de temperaturas** en la región Andina."
+            elif max_p == p_nina:
+                fase_nombre = "La Niña"
+                color_alerta = "🌧️"
+                tipo_caja = st.warning
+                mensaje_riesgo = "lo que incrementaría el riesgo de **excesos hídricos, avenidas torrenciales y deslizamientos** en la región Andina."
+            else:
+                fase_nombre = "Neutra"
+                color_alerta = "📢"
+                tipo_caja = st.info
+                mensaje_riesgo = "lo que indica una tendencia hacia la **normalidad climática**, sujeta a variabilidades locales intraestacionales."
 
-        # Pintamos la caja de advertencia ejecutando dinámicamente el tipo_caja
-        tipo_caja(f"""
-        {color_alerta} **Pronóstico ENSO Actualizado (IRI/CPC):**
-        Según el último reporte sincronizado, nos encontramos en una fase **{fase_nombre}** (o tendencia hacia ella), 
-        con una **probabilidad del {prob_dominante:.0f}%** para el trimestre actual, {mensaje_riesgo} 
-        Se recomienda monitorear los boletines oficiales del IDEAM y ajustar los planes de seguridad hídrica.
-        """)
-
+            # Pintamos la caja con los datos reales e inyectamos el nombre del trimestre
+            tipo_caja(f"""
+            {color_alerta} **Pronóstico ENSO Actualizado (IRI/CPC):**
+            Según el último reporte sincronizado, nos encontramos en una fase **{fase_nombre}** (o tendencia hacia ella), 
+            con una **probabilidad del {max_p:.0f}%** para el trimestre actual ({trimestre_actual['Trimestre']}), {mensaje_riesgo} 
+            Se recomienda monitorear los boletines oficiales del IDEAM y ajustar los planes de seguridad hídrica.
+            """)
+            
+        except Exception as e:
+            # Fallback seguro por si hay pérdida total de conexión con la NOAA
+            st.info("📢 **Pronóstico ENSO:** Conectando con los servidores del IRI/CPC para actualizar el pronóstico...")
         # 2. METODOLOGÍA DESPLEGABLE (Solicitud #2 y #4)
         with st.expander("ℹ️ Ver Metodología Detallada y Ecuaciones", expanded=False):
             st.markdown("""
