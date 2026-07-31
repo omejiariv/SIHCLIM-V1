@@ -89,9 +89,12 @@ def normalizar_texto(texto):
     t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
     t = re.sub(r'[^A-Z0-9_]', '', t)
     
-    # 🚀 FIX FORENSE (El Escudo contra Difflib)
-    if t.startswith("CAROLINA"): t = "CAROLINA"
-    elif t.startswith("SANANDR"): t = "SANANDRES" # Modificado para atrapar el error
+    # 🚀 FIX FORENSE (El Escudo Inteligente)
+    # Conservamos el sufijo _ANTIOQUIA si existe en la llave, o solo dejamos el nombre para la BD
+    if t.startswith("CAROLINA"): 
+        t = "CAROLINA" + t[t.find("_"):] if "_" in t else "CAROLINA"
+    elif t.startswith("SANANDR"): 
+        t = "SANANDRES" + t[t.find("_"):] if "_" in t else "SANANDRES"
     
     diccionario_rebeldes = {
         "BOGOTADC": "BOGOTA", "SANJOSEDECUCUTA": "CUCUTA", "LAGUAJIRA": "GUAJIRA", 
