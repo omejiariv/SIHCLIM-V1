@@ -33,19 +33,6 @@ except ImportError:
 # ==========================================
 # 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
 # ==========================================
-# Llama al menú expandible y resalta la página actual
-selectors.renderizar_menu_navegacion("Modelo Demográfico")
-
-# Encendemos el sistema inmunológico
-encender_gemelo_digital()
-
-st.title("📈 Modelo Demográfico Integral (Proyección y Dasimetría)")
-st.markdown("Ajuste matemático, simulación animada, mapas espaciales y proyección top-down de estructuras poblacionales (1952-2100).")
-
-# ==========================================
-# 📂 NUEVO: MENÚ DE NAVEGACIÓN PERSONALIZADO
-# ==========================================
-# Llama al menú expandible y resalta la página actual
 selectors.renderizar_menu_navegacion("Modelo Demográfico")
 
 # Encendemos el sistema inmunológico
@@ -83,9 +70,6 @@ with st.expander("🕵️‍♂️ ESCÁNER FORENSE DE LA BASE DE DATOS", expand
 
 # --- FUNCION MÁGICA 1: EL ASPIRADOR DE TEXTOS (Match infalible) ---
 def normalizar_texto(texto):
-
-# --- FUNCION MÁGICA 1: EL ASPIRADOR DE TEXTOS (Match infalible) ---
-def normalizar_texto(texto):
     import pandas as pd
     import re
     import unicodedata
@@ -93,10 +77,8 @@ def normalizar_texto(texto):
     t = str(texto).upper()
     t = re.sub(r'\(.*?\)', '', t)
     
-    # --- DESTRUCTOR DE PREFIJOS VEREDALES Y DE ÁREAS NO MUNICIPALIZADAS ---
     t = t.replace("VDA.", "").replace("VDA ", "").replace("VEREDA ", "").replace("SECTOR ", "").replace("CGE.", "").replace("CD.", "").replace("CD ", "").replace("ANM.", "").replace("ANM ", "")
     
-    # 1. HOTFIX: Reparador de Caracteres Mutantes del DANE
     reparador = {
         "Ã\x81": "A", "Ã ": "A", "Ã\x89": "E", "Ã‰": "E",
         "Ã\x8d": "I", "Ã ": "I", "Ã\x93": "O", "Ã“": "O",
@@ -107,19 +89,17 @@ def normalizar_texto(texto):
     for malo, bueno in reparador.items():
         t = t.replace(malo, bueno)
         
-    # 2. Quitar tildes y dejar solo letras, números Y GUIONES BAJOS
     t = ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
     t = re.sub(r'[^A-Z0-9_]', '', t)
+    
     # 🚀 FIX FORENSE (El Escudo contra Difflib)
     if t.startswith("CAROLINA"): t = "CAROLINA"
     elif t.startswith("SANANDRES"): t = "SANANDRES"
     
-    # 3. Traductor DANE-IGAC Actualizado
     diccionario_rebeldes = {
         "BOGOTADC": "BOGOTA", "SANJOSEDECUCUTA": "CUCUTA", "LAGUAJIRA": "GUAJIRA", 
         "VALLE": "VALLEDELCAUCA", "VILLADESANDIEGODEUBATE": "UBATE", "SANTIAGODETOLU": "TOLU",
-        "PUEBLORRICO": "PUEBLORICO", "SANANDRESDECUERQUIA": "SANANDRES",
-        "SANPEDRODELOSMILAGROS": "SANPEDRO", "BRICENO": "BRICEN0",
+        "PUEBLORRICO": "PUEBLORICO", "SANPEDRODELOSMILAGROS": "SANPEDRO", "BRICENO": "BRICEN0",
         "PIZARRO": "BAJOBAUDO", "DOCORDO": "ELLITORALDELSANJUAN", "LITORALDELSANJUAN": "ELLITORALDELSANJUAN",
         "BAHIASOLANO": "BAHIASOLANOMUTIS", "TUMACO": "SANANDRESDETUMACO", "PATIA": "PATIAELBORDO",
         "LOPEZDEMICAY": "LOPEZ", "MAGUI": "MAGUIPAYAN", "ROBERTOPAYAN": "ROBERTOPAYANSANJOSE",
@@ -141,7 +121,7 @@ def normalizar_texto(texto):
         "PAPUNAUA": "PAPUNAHUA", "CHIBOLO": "CHIVOLO", "MANAUREBALCONDELCESAR": "MANAURE",
         "ELPENOL": "PENOL", "ELRETIRO": "RETIRO", "ELSANTUARIO": "SANTUARIO",
         "ELCARMENDEVIBORAL": "CARMENDEVIBORAL", "SANVICENTEFERRER": "SANVICENTE", 
-        "LACEJADELTAMBO": "LACEJA", "CAROLINADELPRINCIPE": "CAROLINA", "SANTAFEDEANTIOQUIA": "SANTAFE"
+        "LACEJADELTAMBO": "LACEJA", "SANTAFEDEANTIOQUIA": "SANTAFE"
     }
     
     if t in diccionario_rebeldes: t = diccionario_rebeldes[t]
