@@ -188,8 +188,17 @@ def load_precipitation_for_stations_cached(lista_estaciones):
 
 def complete_series(df):
     if df is None or df.empty: return df
+    
     df = df.sort_values(Config.DATE_COL)
-    df[Config.PRECIPITATION_COL] = df[Config.PRECIPITATION_COL].interpolate(method="linear", limit_direction="both")
+    
+    # 🚀 FIX FORENSE: Límite estricto de interpolación
+    # limit=3 : Solo rellenará un máximo de 3 huecos consecutivos (ej. 3 meses o 3 días seguidos).
+    # Quitamos limit_direction="both" para que NO extrapole datos donde la estación ya no existía.
+    df[Config.PRECIPITATION_COL] = df[Config.PRECIPITATION_COL].interpolate(
+        method="linear", 
+        limit=3 
+    )
+    
     return df
 
 def leer_csv_robusto(ruta):
