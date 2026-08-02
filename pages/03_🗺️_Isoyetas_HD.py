@@ -124,15 +124,33 @@ def obtener_estaciones_enriquecidas():
     except Exception as e:
         return pd.DataFrame(), False
 
-# 🚀 FIX V3.0: Descarga de municipios directo desde tu base de datos PostGIS
+# 🚀 FIX V3.0: Descarga de municipios con reproyección nativa en PostGIS
 @st.cache_data(ttl=3600)
 def obtener_municipios_db():
     try:
         from modules import db_manager
+        import geopandas as gpd
+        
         engine = db_manager.get_engine()
-        # ST_Simplify reduce el peso geométrico para que el mapa renderice volando
-        return gpd.read_postgis("SELECT nombre_municipio, ST_Simplify(geometry, 0.005) as geom FROM municipios WHERE depto_nom ILIKE '%%Antioquia%%'", engine, geom_col='geom')
+        
+        # 1. ST_Transform(geometry, 4326): Obliga a PostGIS a entregar los datos en grados (Lat/Lon).
+        # 2. ST_Simplify(..., 0.005): Suaviza los bordes (aprox 500m) para que el mapa cargue súper rápido.
+        sql_query = """
+            SELECT nombre_municipio, 
+                   ST_Simplify(ST_Transform(geometry, 4326), 0.005) as geom 
+            FROM municipios 
+            WHERE depto_nom ILIKE '%%Antioquia%%'
+        """
+        
+        gdf = gpd.read_postgis(sql_query, engine, geom_col='geom')
+        
+        # Le pegamos la "etiqueta" oficial de WGS84 a GeoPandas por seguridad
+        if gdf.crs is None:
+            gdf = gdf.set_crs(epsg=4326)
+            
+        return gdf
     except Exception as e:
+        print(f"Error espacial en capa municipios: {e}")
         return None
 
 # 🚀 FIX V3.0: Función de renderizado espacial COMPLETA (Límite, Cuencas y Municipios)
