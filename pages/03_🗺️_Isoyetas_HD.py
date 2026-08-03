@@ -191,11 +191,21 @@ def add_context_layers_robust(fig, gdf_zona_actual, show_cuencas=False, show_mun
             gdf_m = gdf_m.to_crs("EPSG:4326")
             for _, r in gdf_m.iterrows():
                 if r['geom'] is None: continue
+                # Capturamos el nombre del municipio
+                nom_muni = r.get('nombre_municipio', 'Municipio')
                 polys = [r['geom']] if r['geom'].geom_type == 'Polygon' else list(r['geom'].geoms)
+                
                 for p in polys:
                     x, y = p.exterior.xy
-                    # Municipios con línea gris punteada
-                    fig.add_trace(go.Scatter(x=list(x), y=list(y), mode='lines', line=dict(width=0.7, color='rgba(100, 100, 100, 0.5)', dash='dot'), hoverinfo='skip', showlegend=False))
+                    # Magia de UI: Añadimos hovertemplate para que el texto siga al cursor en la frontera
+                    fig.add_trace(go.Scatter(
+                        x=list(x), y=list(y), mode='lines', 
+                        line=dict(width=0.7, color='rgba(100, 100, 100, 0.5)', dash='dot'), 
+                        name=nom_muni,
+                        text=[nom_muni] * len(x),
+                        hovertemplate="<b>%{text}</b><extra></extra>", 
+                        showlegend=False
+                    ))
 
 # RESTAURADO: Funciones auxiliares
 def calcular_pronostico(df_anual, target_year):
@@ -250,8 +260,6 @@ def generar_raster_ascii(grid_z, minx, miny, cellsize, nrows, ncols):
         body += " ".join([f"{val:.2f}" for val in row]) + "\n"
     return header + body
 
-# pages/03_🗺️_Isoyetas_HD.py (BLOQUE 2)
-
 # --- 5. SIDEBAR: CONFIGURACIÓN DEL MAPA ---
 st.sidebar.header("⚙️ Configuración del Mapa")
 tipo_analisis = st.sidebar.selectbox("📊 Modo de Análisis:", ["Año Específico", "Promedio Multianual", "Variabilidad Temporal", "Mínimo Histórico", "Máximo Histórico", "Pronóstico Futuro"])
@@ -277,6 +285,9 @@ ignore_nulls = c2.checkbox("🚫 No Nulos", value=True)
 
 do_interp_temp = False
 if complete_series: do_interp_temp = st.sidebar.checkbox("🔄 Interpolación Temporal", value=False)
+
+# 🚀 NUEVO: Interruptor del Mapa de Incertidumbre
+ver_error = st.sidebar.checkbox("📉 Ver Incertidumbre (Varianza)", value=False, help="Muestra las zonas de mayor error predictivo (solo disponible para Kriging).")
 
 # --- NUEVAS HERRAMIENTAS V3.0 (Resolución, Suavizado e Info) ---
 st.sidebar.markdown("---")
@@ -423,10 +434,22 @@ with tab_mapa:
                         c_cuenca = df_final[col_cuenca].fillna('-') if col_cuenca else ["-"]*len(df_final)
                         custom_data = np.stack((c_muni, c_alt, c_cuenca, df_final['hover_val']), axis=-1)
                         
-                        # 🚀 CONTORNO ACTUALIZADO CON LOS SLIDERS
+                        # Lógica para alternar entre Isoyetas y Mapa de Error
+                        if ver_error and grid_z_var is not None and "Kriging" in metodo_seleccionado:
+                            matriz_pintar = grid_z_var.T
+                            titulo_color = "Error (mm)"
+                            escala_color = "Reds"
+                            tit_mapa = f"Incertidumbre ({metodo_seleccionado}) | {nombre_zona}"
+                        else:
+                            matriz_pintar = grid_z.T
+                            titulo_color = "mm/año"
+                            escala_color = paleta_colores
+                            tit_mapa = f"Isoyetas ({metodo_seleccionado}): {tipo_analisis} | {nombre_zona}"
+
+                        # El Contorno Maestro Dinámico
                         fig.add_trace(go.Contour(
-                            z=grid_z.T, x=np.linspace(q_minx, q_maxx, grid_res), y=np.linspace(q_miny, q_maxy, grid_res),
-                            colorscale=paleta_colores, zmin=z_min, zmax=z_max, colorbar=dict(title="mm/año"),
+                            z=matriz_pintar, x=np.linspace(q_minx, q_maxx, grid_res), y=np.linspace(q_miny, q_maxy, grid_res),
+                            colorscale=escala_color, zmin=np.min(matriz_pintar), zmax=np.max(matriz_pintar), colorbar=dict(title=titulo_color),
                             contours=dict(coloring='heatmap', showlabels=True, labelfont=dict(size=10, color='white')),
                             opacity=0.8, connectgaps=True, line_smoothing=smooth_val
                         ))
@@ -446,15 +469,26 @@ with tab_mapa:
                         fig.update_layout(title=tit, height=650, margin=dict(l=0,r=0,t=40,b=0), xaxis=dict(visible=False, scaleanchor="y", scaleratio=1), yaxis=dict(visible=False), plot_bgcolor='white', dragmode='pan')
                         st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True})
                         
-                        # 🚀 FIX: Capturar el estado del sidebar para la trazabilidad
+                        # 🚀 FIX: Capturar el estado del sidebar y calcular el área
                         txt_var = f" (Variograma: {modelo_var_seleccionado})" if "Kriging" in metodo_seleccionado else ""
                         
                         if tipo_analisis == "Año Específico": txt_tiempo = f"Año {params_analisis['year']}"
                         elif tipo_analisis in ["Promedio Multianual", "Variabilidad Temporal"]: txt_tiempo = f"Periodo {params_analisis['start']} - {params_analisis['end']}"
                         else: txt_tiempo = f"Proyección {params_analisis.get('target', '')}"
                         
-                        config_str = f"> *Método:* **{metodo_seleccionado}** {txt_var} | *Temporalidad:* **{txt_tiempo}** | *Radio de Búsqueda:* **{buffer_km} km** | *Estaciones usadas:* **{len(df_final)}**"
+                        # Cálculo matemático del área en km2 usando Magna-Sirgas
+                        area_km2 = 0
+                        if gdf_zona is not None and not gdf_zona.empty:
+                            try:
+                                # EPSG:3116 permite medir en metros reales en Colombia
+                                area_km2 = gdf_zona.to_crs(epsg=3116).area.sum() / 1_000_000
+                            except:
+                                pass # Evita errores si la geometría viene rota
                         
+                        # Construcción del texto consolidado
+                        config_str = f"> *Método:* **{metodo_seleccionado}** {txt_var} | *Temporalidad:* **{txt_tiempo}** | *Radio:* **{buffer_km} km** | *Área de Estudio:* **{area_km2:,.1f} km²**"
+                        
+                        # Inyección de los datos a la interfaz
                         st.info(generar_analisis_texto_corregido(df_final, tipo_analisis, config_str))
                 else:
                     st.warning("⚠️ Quedaron menos de 3 estaciones válidas después de aplicar los filtros de calidad temporal para este año.")
