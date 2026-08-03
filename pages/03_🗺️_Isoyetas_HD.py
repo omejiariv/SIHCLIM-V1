@@ -435,14 +435,40 @@ with tab_mapa:
                         except:
                             dem_grid = None
 
-                        # 🚀 FIX V3.0 DEFINITIVO: 2. Traductor a prueba de balas para el motor maestro
+                        # 🚀 FIX V3.0 DEFINITIVO: 1. Traductores a prueba de balas
                         m_cod = 'ked' if 'Deriva' in metodo_seleccionado else ('kriging' if 'Kriging' in metodo_seleccionado else 'spline')
+                        
+                        dic_var = {"esférico": "spherical", "exponencial": "exponential", "gaussiano": "gaussian", "lineal": "linear"}
+                        # Extraemos el valor del sidebar con seguridad
+                        var_str = modelo_var_seleccionado.lower() if 'modelo_var_seleccionado' in locals() else "esférico"
+                        v_cod = dic_var.get(var_str, "spherical")
 
+                        # 🚀 FIX V3.0 DEFINITIVO: 2. Construir Pseudo-DEM (Relieve Virtual)
                         try:
-                            # 🚀 Le inyectamos la orden traducida (m_cod) y el mapa de montañas (dem_grid)
-                            grid_z, grid_z_var = interpolador_maestro(df_puntos=gdf_final, col_val='valor', grid_x=gx_raw, grid_y=gy_raw, metodo=m_cod, modelo_variograma=modelo_var_codigo, dem_grid=dem_grid)
+                            if col_alt and col_alt in df_final.columns:
+                                known_alt = df_final[df_final[col_alt] > 0]
+                                if len(known_alt) >= 3:
+                                    from scipy.interpolate import griddata
+                                    pts = known_alt[['lon_calc', 'lat_calc']].values
+                                    vals_alt = known_alt[col_alt].values
+                                    dem_grid = griddata(pts, vals_alt, (gx_raw, gy_raw), method='linear')
+                                    # Tapamos huecos
+                                    mask_n = np.isnan(dem_grid)
+                                    if np.any(mask_n):
+                                        dem_grid[mask_n] = griddata(pts, vals_alt, (gx_raw[mask_n], gy_raw[mask_n]), method='nearest')
+                                else:
+                                    dem_grid = None
+                            else:
+                                dem_grid = None
+                        except:
+                            dem_grid = None
+
+                        # --- LLAMADA AL MOTOR MAESTRO ---
+                        try:
+                            # Inyectamos los códigos matemáticos traducidos (m_cod y v_cod)
+                            grid_z, grid_z_var = interpolador_maestro(df_puntos=gdf_final, col_val='valor', grid_x=gx_raw, grid_y=gy_raw, metodo=m_cod, modelo_variograma=v_cod, dem_grid=dem_grid)
                         except Exception as e:
-                            st.error(f"Fallo en interpolación: {e}")
+                            st.error(f"Fallo profundo en el motor matemático: {e}")
                             grid_z = np.zeros_like(gx_raw)
                             grid_z_var = None
 
@@ -470,7 +496,6 @@ with tab_mapa:
                         for _, row in df_final.iterrows():
                             alt_actual = row[col_alt] if col_alt and pd.notna(row[col_alt]) else 0
                             
-                            # Si la estación es automática (0) y logramos armar el Pseudo-DEM
                             if (alt_actual == 0) and dem_grid is not None:
                                 try:
                                     alt_interp = griddata((gx_raw.flatten(), gy_raw.flatten()), dem_grid.flatten(), (row['lon_calc'], row['lat_calc']), method='nearest')
@@ -497,7 +522,7 @@ with tab_mapa:
                             opacity=0.8, connectgaps=True, line_smoothing=smooth_val
                         ))
                         
-                        # Inyección de las capas espaciales (Límites, Cuencas, Municipios)
+                        # Inyección de las capas espaciales
                         add_context_layers_robust(fig, gdf_zona, ver_cuencas, ver_municipios)
                         
                         # --- PUNTOS DE LAS ESTACIONES ---
