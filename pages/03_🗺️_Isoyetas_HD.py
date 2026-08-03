@@ -415,10 +415,38 @@ with tab_mapa:
                         gdf_final = gpd.GeoDataFrame(df_final, geometry=gpd.points_from_xy(df_final.lon_calc, df_final.lat_calc), crs="EPSG:4326")
                         
                         try:
-                            grid_z, _ = interpolador_maestro(df_puntos=gdf_final, col_val='valor', grid_x=gx_raw, grid_y=gy_raw, metodo=metodo_codigo, modelo_variograma=modelo_var_codigo)
+                            # 🚀 FIX V3.0: Desempaquetamos la varianza (grid_z_var) para el mapa de error
+                            grid_z, grid_z_var = interpolador_maestro(df_puntos=gdf_final, col_val='valor', grid_x=gx_raw, grid_y=gy_raw, metodo=metodo_codigo, modelo_variograma=modelo_var_codigo)
                         except Exception as e:
                             st.error(f"Fallo en interpolación: {e}")
                             grid_z = np.zeros_like(gx_raw)
+                            grid_z_var = None
+
+                        # --- SWITCH DEL MAPA ---
+                        # Aquí el sistema decide si pinta la lluvia o el error
+                        if 'ver_error' in locals() and ver_error and grid_z_var is not None and ("kriging" in metodo_codigo or "ked" in metodo_codigo):
+                            matriz_pintar = grid_z_var.T
+                            titulo_color = "Error Prom."
+                            escala_color = "Reds"
+                            tit = f"Mapa de Incertidumbre (Varianza) | {metodo_seleccionado} | {nombre_zona}"
+                            z_min_map, z_max_map = np.min(grid_z_var), np.max(grid_z_var)
+                        else:
+                            matriz_pintar = grid_z.T
+                            titulo_color = "mm/año"
+                            escala_color = paleta_colores
+                            tit = f"Isoyetas ({metodo_seleccionado}): {tipo_analisis} | {nombre_zona}"
+                            z_min_map, z_max_map = df_final['valor'].min(), df_final['valor'].max()
+                            if z_max_map == z_min_map: z_max_map += 0.1
+                        
+                        # --- CÓDIGO DEL CONTOUR ACTUALIZADO ---
+                        # (Asegúrate de que el z y los zmin/zmax usen las variables que acabamos de definir)
+                        fig = go.Figure()
+                        fig.add_trace(go.Contour(
+                            z=matriz_pintar, x=np.linspace(q_minx, q_maxx, grid_res), y=np.linspace(q_miny, q_maxy, grid_res),
+                            colorscale=escala_color, zmin=z_min_map, zmax=z_max_map, colorbar=dict(title=titulo_color),
+                            contours=dict(coloring='heatmap', showlabels=True, labelfont=dict(size=10, color='white')),
+                            opacity=0.8, connectgaps=True, line_smoothing=smooth_val
+                        ))
 
                         z_min, z_max = df_final['valor'].min(), df_final['valor'].max()
                         if z_max == z_min: z_max += 0.1
@@ -428,9 +456,30 @@ with tab_mapa:
                         
                         df_final['hover_val'] = df_final['valor'].apply(lambda x: f"{x:,.0f}")
                         
+                        # 🚀 FIX V3.0: Rellenado matemático de altitud para estaciones automáticas PIRAGUA
+                        c_alt_original = df_final[col_alt].fillna(0).values if col_alt else np.zeros(len(df_final))
+                        c_alt_corregida = []
+                        
+                        for idx, row in df_final.iterrows():
+                            alt_actual = c_alt_original[idx]
+                            
+                            # Si la altitud es 0 (estaciones automáticas) y tenemos un modelo de elevación (DEM)
+                            if (alt_actual == 0 or pd.isna(alt_actual)) and 'dem_grid' in locals() and dem_grid is not None:
+                                try:
+                                    from scipy.interpolate import griddata
+                                    alt_interp = griddata((gx_raw.flatten(), gy_raw.flatten()), dem_grid.flatten(), (row['lon_calc'], row['lat_calc']), method='nearest')
+                                    # Extraer valor numérico limpio
+                                    val = float(alt_interp[0]) if isinstance(alt_interp, (np.ndarray, list)) else float(alt_interp)
+                                    c_alt_corregida.append(round(val, 1))
+                                except:
+                                    c_alt_corregida.append(alt_actual)
+                            else:
+                                c_alt_corregida.append(alt_actual)
+                                
+                        c_alt = np.array(c_alt_corregida)
+                        
                         # Preparando datos enriquecidos para el tooltip del mapa
                         c_muni = df_final[col_muni].fillna('-') if col_muni else ["-"]*len(df_final)
-                        c_alt = df_final[col_alt].fillna(0) if col_alt else [0]*len(df_final)
                         c_cuenca = df_final[col_cuenca].fillna('-') if col_cuenca else ["-"]*len(df_final)
                         custom_data = np.stack((c_muni, c_alt, c_cuenca, df_final['hover_val']), axis=-1)
                         
