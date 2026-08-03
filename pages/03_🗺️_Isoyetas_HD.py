@@ -422,14 +422,17 @@ with tab_mapa:
                             grid_z = np.zeros_like(gx_raw)
                             grid_z_var = None
 
-                        # --- 🚀 SWITCH: ISOYETAS VS MAPA DE INCERTIDUMBRE ---
-                        if 'ver_error' in locals() and ver_error and grid_z_var is not None and ("kriging" in metodo_codigo or "ked" in metodo_codigo):
+                        # --- 🚀 SWITCH BLINDADO: ISOYETAS VS MAPA DE INCERTIDUMBRE ---
+                        # Solo pintamos error si el botón está activo Y el motor devolvió una matriz de varianza válida
+                        if ver_error and grid_z_var is not None and np.any(grid_z_var):
                             matriz_pintar = grid_z_var.T
                             titulo_color = "Error Prom."
-                            escala_color = "Reds"
+                            escala_color = "Reds"  # El error siempre se pinta en rojo
                             tit = f"Mapa de Incertidumbre (Varianza) | {metodo_seleccionado} | {nombre_zona}"
                             z_min_map, z_max_map = np.min(grid_z_var), np.max(grid_z_var)
                         else:
+                            if ver_error:
+                                st.warning("⚠️ El mapa de incertidumbre solo está disponible para métodos estadísticos (Kriging).")
                             matriz_pintar = grid_z.T
                             titulo_color = "mm/año"
                             escala_color = paleta_colores
