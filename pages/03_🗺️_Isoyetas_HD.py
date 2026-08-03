@@ -414,25 +414,48 @@ with tab_mapa:
                         gx_raw, gy_raw = np.mgrid[q_minx:q_maxx:complex(0, grid_res), q_miny:q_maxy:complex(0, grid_res)]
                         gdf_final = gpd.GeoDataFrame(df_final, geometry=gpd.points_from_xy(df_final.lon_calc, df_final.lat_calc), crs="EPSG:4326")
                         
+                        # 🚀 FIX V3.0 DEFINITIVO: 1. Construir Pseudo-DEM a partir de estaciones históricas
                         try:
-                            # 🚀 FIX V3.0: Desempaquetamos Z y Varianza (Incertidumbre)
-                            grid_z, grid_z_var = interpolador_maestro(df_puntos=gdf_final, col_val='valor', grid_x=gx_raw, grid_y=gy_raw, metodo=metodo_codigo, modelo_variograma=modelo_var_codigo)
+                            if col_alt and col_alt in df_final.columns:
+                                known_alt = df_final[df_final[col_alt] > 0]
+                                if len(known_alt) >= 3:
+                                    from scipy.interpolate import griddata
+                                    pts = known_alt[['lon_calc', 'lat_calc']].values
+                                    vals = known_alt[col_alt].values
+                                    # Armamos la superficie de montañas virtual
+                                    dem_grid = griddata(pts, vals, (gx_raw, gy_raw), method='linear')
+                                    # Tapamos los huecos de los bordes
+                                    mask_n = np.isnan(dem_grid)
+                                    if np.any(mask_n):
+                                        dem_grid[mask_n] = griddata(pts, vals, (gx_raw[mask_n], gy_raw[mask_n]), method='nearest')
+                                else:
+                                    dem_grid = None
+                            else:
+                                dem_grid = None
+                        except:
+                            dem_grid = None
+
+                        # 🚀 FIX V3.0 DEFINITIVO: 2. Traductor a prueba de balas para el motor maestro
+                        m_cod = 'ked' if 'Deriva' in metodo_seleccionado else ('kriging' if 'Kriging' in metodo_seleccionado else 'spline')
+
+                        try:
+                            # 🚀 Le inyectamos la orden traducida (m_cod) y el mapa de montañas (dem_grid)
+                            grid_z, grid_z_var = interpolador_maestro(df_puntos=gdf_final, col_val='valor', grid_x=gx_raw, grid_y=gy_raw, metodo=m_cod, modelo_variograma=modelo_var_codigo, dem_grid=dem_grid)
                         except Exception as e:
                             st.error(f"Fallo en interpolación: {e}")
                             grid_z = np.zeros_like(gx_raw)
                             grid_z_var = None
 
-                        # --- 🚀 SWITCH BLINDADO: ISOYETAS VS MAPA DE INCERTIDUMBRE ---
-                        # Solo pintamos error si el botón está activo Y el motor devolvió una matriz de varianza válida
+                        # --- SWITCH BLINDADO: ISOYETAS VS MAPA DE INCERTIDUMBRE ---
                         if ver_error and grid_z_var is not None and np.any(grid_z_var):
                             matriz_pintar = grid_z_var.T
                             titulo_color = "Error Prom."
-                            escala_color = "Reds"  # El error siempre se pinta en rojo
+                            escala_color = "Reds"
                             tit = f"Mapa de Incertidumbre (Varianza) | {metodo_seleccionado} | {nombre_zona}"
                             z_min_map, z_max_map = np.min(grid_z_var), np.max(grid_z_var)
                         else:
                             if ver_error:
-                                st.warning("⚠️ El mapa de incertidumbre solo está disponible para métodos estadísticos (Kriging).")
+                                st.warning("⚠️ El modelo matemático tuvo que usar algoritmos de respaldo por falta de densidad de puntos en la zona. No hay matriz de varianza disponible.")
                             matriz_pintar = grid_z.T
                             titulo_color = "mm/año"
                             escala_color = paleta_colores
@@ -442,15 +465,14 @@ with tab_mapa:
 
                         fig = go.Figure()
                         
-                        # --- 🚀 FIX: RELLENADO DE ALTITUD SIN ERROR DE ÍNDICE ---
+                        # --- RELLENADO INTELIGENTE DE ALTITUD PARA RED PIRAGUA ---
                         c_alt_corregida = []
                         for _, row in df_final.iterrows():
-                            # Leemos directamente de la fila, olvidándonos del índice roto
                             alt_actual = row[col_alt] if col_alt and pd.notna(row[col_alt]) else 0
                             
-                            if (alt_actual == 0) and 'dem_grid' in locals() and dem_grid is not None:
+                            # Si la estación es automática (0) y logramos armar el Pseudo-DEM
+                            if (alt_actual == 0) and dem_grid is not None:
                                 try:
-                                    from scipy.interpolate import griddata
                                     alt_interp = griddata((gx_raw.flatten(), gy_raw.flatten()), dem_grid.flatten(), (row['lon_calc'], row['lat_calc']), method='nearest')
                                     val = float(alt_interp[0]) if isinstance(alt_interp, (np.ndarray, list)) else float(alt_interp)
                                     c_alt_corregida.append(round(val, 1))
@@ -467,7 +489,7 @@ with tab_mapa:
                         c_cuenca = df_final[col_cuenca].fillna('-') if col_cuenca else ["-"]*len(df_final)
                         custom_data = np.stack((c_muni, c_alt, c_cuenca, df_final['hover_val']), axis=-1)
 
-                        # --- DIBUJADO DE LA SUPERFICIE MÁGICA ---
+                        # --- DIBUJADO DE LA SUPERFICIE ---
                         fig.add_trace(go.Contour(
                             z=matriz_pintar, x=np.linspace(q_minx, q_maxx, grid_res), y=np.linspace(q_miny, q_maxy, grid_res),
                             colorscale=escala_color, zmin=z_min_map, zmax=z_max_map, colorbar=dict(title=titulo_color),
