@@ -733,6 +733,11 @@ def main():
     elif selected_module == "⚠️ Anomalías": viz.display_anomalies_tab(**display_args)
     elif selected_module == "🔗 Correlación": viz.display_correlation_tab(**display_args)
     elif selected_module == "🌊 Extremos": viz.display_drought_analysis_tab(**display_args)
+    elif selected_module == "🌀 Dinámica de Sistemas": 
+        viz.display_enso_system_dynamics_tab(
+            df_monthly_filtered=display_args["df_monthly_filtered"],
+            nombre_zona=display_args["nombre_zona"]
+        )   
     
 # --- MÓDULO: MAPAS AVANZADOS (VERSIÓN DEFINITIVA CORREGIDA) ---
     elif selected_module == "🌍 Mapas Avanzados":
