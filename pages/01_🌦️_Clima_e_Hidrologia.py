@@ -241,7 +241,6 @@ def main():
         
     with col_nav2:
         if "Analítica" in categoria_nav:
-            # 🧠 Inyectamos la nueva opción en la lista base
             opciones = ["🗺️ Distribución", "🚨 Monitoreo", "📈 Gráficos", "📊 Estadísticas", "🧠 Peritaje y Consistencia", "📄 Reporte", "🏠 Inicio"]
         elif "Ciencia" in categoria_nav:
             opciones = ["🔮 Pronóstico Climático", "📉 Tendencias", "⚠️ Anomalías", "🔗 Correlación", "🌊 Extremos", "🧪 Sesgo", "🌀 Dinámica de Sistemas"]
@@ -249,7 +248,7 @@ def main():
             opciones = ["🌍 Mapas Avanzados (Motor Aleph)", "✨ Mapas Isoyetas HD", "🌿 Cobertura", "🌱 Zonas Vida", "🌡️ Clima Futuro"]
             
         selected_module_raw = st.selectbox("🎯 Módulo Específico:", opciones)
-
+        
     with col_nav3:
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("🔄 Refrescar Memoria", help="Limpia el caché y recarga los datos desde cero", width="stretch"):
