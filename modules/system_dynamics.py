@@ -3,33 +3,30 @@
 import pandas as pd
 import numpy as np
 
-def run_enso_system_dynamics(
-    meses_simulacion, 
+def run_enso_system_dynamics_prophet(
+    df_proyeccion, 
     oni_mensual, 
-    precip_base_mensual, 
     temp_base,
     area_cuenca_km2,
     poblacion_servida,
     caudal_rurh_m3s=0.0
 ):
     """
-    Motor de Dinámica de Sistemas para simular los efectos en cascada del ENSO.
-    Incluye vector de tiempo real anclado al mes de ejecución actual.
+    Motor de Dinámica de Sistemas de 2da Generación.
+    Utiliza como Línea Base la proyección estocástica de Prophet y aplica 
+    física mecanicista para simular el estrés del ENSO sobre la recarga de acuíferos.
     """
-    
-    # ========================================================
-    # 0. EJE DE TIEMPO REAL (El "Tiempo Cero")
-    # ========================================================
-    # Anclamos el inicio al primer día del mes actual
-    fecha_inicio = pd.Timestamp.today().replace(day=1)
-    fechas_simulacion = pd.date_range(start=fecha_inicio, periods=meses_simulacion, freq='MS')
+    meses_simulacion = len(df_proyeccion)
     
     # ========================================================
     # 1. CONDICIONES INICIALES Y CONSTANTES
     # ========================================================
     stock_humedad_suelo = 100.0  
-    stock_embalse_hm3 = (precip_base_mensual[0] / 1000.0) * area_cuenca_km2 * 0.3 
-    vol_max_embalse = max(stock_embalse_hm3 * 1.5, 1.0) 
+    
+    # Asumimos una reserva base a partir de la recarga del primer mes
+    recarga_inicial_hm3 = (df_proyeccion.iloc[0]['recarga_mm'] / 1000.0) * area_cuenca_km2
+    stock_embalse_hm3 = max(recarga_inicial_hm3 * 12, 1.0) # Reserva para un año aprox
+    vol_max_embalse = stock_embalse_hm3 * 1.5 
     
     dotacion_lhd = 150 # Litros habitante día
     demanda_urbana_hm3_mes = (poblacion_servida * dotacion_lhd * 30) / 1e9
@@ -39,43 +36,48 @@ def run_enso_system_dynamics(
     resultados = []
     
     # ========================================================
-    # 2. BUCLE DE INTEGRACIÓN TEMPORAL
+    # 2. BUCLE DE INTEGRACIÓN TEMPORAL (Usando Prophet)
     # ========================================================
     for t in range(meses_simulacion):
-        fecha_actual = fechas_simulacion[t]
-        mes_del_anio = fecha_actual.month 
+        row = df_proyeccion.iloc[t]
+        fecha_actual = row['fecha']
+        mes_del_anio = fecha_actual.month
         
         oni_actual = oni_mensual[t]
-        precip_historica = precip_base_mensual[t]
         
-        # --- SUBSISTEMA 1: CLIMA ---
+        # Leemos la LÍNEA BASE (Pronóstico Prophet sin ENSO)
+        precip_prophet_mm = row['p_final']
+        recarga_prophet_mm = row['recarga_mm']
+        infilt_prophet_mm = row['infiltracion_mm']
+        
+        # --- SUBSISTEMA 1: ESTRÉS CLIMÁTICO (ENSO) ---
         factor_precip = max(0.1, 1.0 - (oni_actual * 0.30)) 
         factor_temp = 1.0 + (oni_actual * 0.15)
         
-        precip_simulada_mm = precip_historica * factor_precip
+        precip_simulada_mm = precip_prophet_mm * factor_precip
         temp_simulada_c = temp_base * factor_temp
         multiplicador_viento = 1.5 if mes_del_anio in [7, 8] else 1.0
         
-        # --- SUBSISTEMA 2: HIDROLOGÍA ---
-        L_t = 300 + 25 * temp_simulada_c + 0.05 * (temp_simulada_c ** 3)
-        etr_mm = precip_simulada_mm / np.sqrt(0.9 + (precip_simulada_mm / L_t) ** 2) if L_t > 0 else 0
-        etr_mm = min(etr_mm, precip_simulada_mm) * multiplicador_viento
+        # --- SUBSISTEMA 2: HIDROGEOLOGÍA AFECTADA ---
+        # Si llueve menos por El Niño, la recarga y la infiltración caen proporcionalmente
+        recarga_simulada_mm = recarga_prophet_mm * factor_precip
+        infilt_simulada_mm = infilt_prophet_mm * factor_precip
         
-        escorrentia_mm = max(0, precip_simulada_mm - etr_mm)
-        aporte_cuenca_hm3 = (escorrentia_mm / 1000.0) * area_cuenca_km2
+        aporte_cuenca_hm3 = (recarga_simulada_mm / 1000.0) * area_cuenca_km2
         
-        infiltracion = precip_simulada_mm * 0.2
+        # Dinámica de Suelos
         evaporacion_suelo = temp_simulada_c * 2.0 * multiplicador_viento
-        delta_humedad = infiltracion - evaporacion_suelo
+        delta_humedad = infilt_simulada_mm - evaporacion_suelo
         stock_humedad_suelo = max(0.0, min(100.0, stock_humedad_suelo + delta_humedad))
         
+        # Dinámica de Reservas (Acuífero/Embalse)
         delta_embalse = aporte_cuenca_hm3 - demanda_total_hm3
         stock_embalse_hm3 = max(0.0, min(vol_max_embalse, stock_embalse_hm3 + delta_embalse))
         
-        # --- SUBSISTEMA 3: IMPACTOS EN CASCADA ---
+        # --- SUBSISTEMA 3: CASCADA DE IMPACTOS ---
         indice_desabastecimiento = 0.0
         if demanda_total_hm3 > 0:
-            umbral_alerta = demanda_total_hm3 * 2 
+            umbral_alerta = demanda_total_hm3 * 3 # Alerta si queda agua para < 3 meses
             if stock_embalse_hm3 < umbral_alerta: 
                 indice_desabastecimiento = min(100.0, (umbral_alerta - stock_embalse_hm3) / umbral_alerta * 100)
             
@@ -83,22 +85,25 @@ def run_enso_system_dynamics(
         indice_incendios = indice_incendios * (temp_simulada_c / temp_base) * multiplicador_viento
         indice_incendios = min(100.0, indice_incendios)
         
-        indice_estres_urbano = 100.0 - (precip_simulada_mm / (precip_historica + 1) * 100.0)
+        indice_estres_urbano = 100.0 - (precip_simulada_mm / (precip_prophet_mm + 1) * 100.0)
         if temp_simulada_c > 25: indice_estres_urbano += (temp_simulada_c - 25) * 5
         indice_estres_urbano = max(0.0, min(100.0, indice_estres_urbano))
         
+        # Acumulación de Déficit de Recarga (La pérdida real de agua subterránea)
+        deficit_recarga_mm = recarga_prophet_mm - recarga_simulada_mm
+        
         resultados.append({
-            "Fecha": fecha_actual,  # <--- Inyección de Fecha Real
-            "Mes": t + 1, 
+            "Fecha": fecha_actual, 
             "Mes_Anio": mes_del_anio,
             "ONI": float(oni_actual), 
             "Precipitación (mm)": float(precip_simulada_mm),
+            "Recarga Acuífero (mm)": float(recarga_simulada_mm),
+            "Pérdida Recarga (mm)": float(max(0, deficit_recarga_mm)), # Lo que se pierde por el ENSO
             "Temperatura (°C)": float(temp_simulada_c), 
-            "Aporte Hídrico (Hm3)": float(aporte_cuenca_hm3),
             "Reservas (Hm3)": float(stock_embalse_hm3), 
             "Humedad Suelo (%)": float(stock_humedad_suelo),
             "Riesgo Incendios (0-100)": float(indice_incendios),
-            "Estrés Urbano/Calidad (0-100)": float(indice_estres_urbano),
+            "Estrés Urbano (0-100)": float(indice_estres_urbano),
             "Desabastecimiento (0-100)": float(indice_desabastecimiento)
         })
         
