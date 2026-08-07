@@ -1057,6 +1057,22 @@ def main():
                             geom_unificada = gdf_zona_valida.geometry.simplify(0.001).unary_union
                             mask_exact = contains(geom_unificada, grid_x, grid_y)
                             
+                            # 🏔️ EXTRACCIÓN TOPOGRÁFICA DIRECTA DEL DEM (Para Telemetría Global)
+                            alt_media, alt_max, alt_min = 1500.0, 1500.0, 1500.0
+                            if dem_array is not None:
+                                alts_mask = dem_array[mask_exact]
+                                # Filtramos nodata o valores anómalos de bordes
+                                alts_validas = alts_mask[(alts_mask > -500) & (alts_mask != 0)]
+                                if len(alts_validas) > 0:
+                                    alt_media = np.nanmean(alts_validas)
+                                    alt_max = np.nanmax(alts_validas)
+                                    alt_min = np.nanmin(alts_validas)
+                            
+                            # 💉 INYECCIÓN AL ALEPH (Para que el Simulador ENSO los herede sin recalcular)
+                            st.session_state['aleph_altitud_m'] = float(alt_media)
+                            st.session_state['aleph_altitud_max'] = float(alt_max)
+                            st.session_state['aleph_altitud_min'] = float(alt_min)
+                            
                             def get_avg(keyword): 
                                 """Busca la capa en matrices_finales y calcula el promedio zonal."""
                                 for k, v in matrices_finales.items():
@@ -1123,9 +1139,11 @@ def main():
                             # COL 1: MORFOMETRÍA
                             k1.markdown("#### 📏 Morfometría")
                             k1.metric("Área", f"{area_km2:.2f} km²")
+                            # ⛰️ NUEVO: Integración de Elevaciones
+                            k1.metric("Elevación Media", f"{alt_media:,.0f} msnm", f"Mín: {alt_min:,.0f}m | Máx: {alt_max:,.0f}m", delta_color="off")
                             k1.metric("Perímetro", f"{perim_km:.1f} km")
                             k1.metric("Índice Gravelius", f"{ind_gravelius:.2f}", "Forma (Kc)")
-                            k1.metric("Estaciones", f"{len(gdf_calc)}")
+                            k1.metric("Estaciones Base", f"{len(gdf_calc)}")
                             
                             # COL 2: BALANCE HÍDRICO
                             k2.markdown("#### 💧 Balance (mm)")
