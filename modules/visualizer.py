@@ -6382,35 +6382,35 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
             if altitud_m <= 0:
                 exito_dem = False
                 
-                # Intentamos extraer del DEM local/nube
+                # Intentamos extraer del DEM (Sin os.path.exists para soportar URLs de Nube/Supabase)
                 try:
                     import rasterio
                     from rasterio.mask import mask
-                    import os
                     
-                    if hasattr(Config, 'DEM_FILE_PATH') and os.path.exists(Config.DEM_FILE_PATH):
-                        with rasterio.open(Config.DEM_FILE_PATH) as src:
-                            # Proyectamos el polígono al mismo CRS que el DEM
-                            gdf_zona_dem = gdf_zona_calc.to_crs(src.crs)
+                    dem_path = getattr(Config, 'DEM_FILE_PATH', 'data/dem_antioquia.tif')
+                    
+                    with rasterio.open(dem_path) as src:
+                        # Proyectamos el polígono al mismo CRS que el DEM
+                        gdf_zona_dem = gdf_zona_calc.to_crs(src.crs)
+                        
+                        # Enmascaramos el raster usando el polígono
+                        out_image, out_transform = mask(src, gdf_zona_dem.geometry, crop=True, nodata=src.nodata)
+                        
+                        # Filtramos los píxeles válidos (ignorando nodata y errores de bordes)
+                        valid_pixels = out_image[(out_image != src.nodata) & (out_image > -500)]
+                        
+                        if len(valid_pixels) > 0:
+                            altitud_m = float(np.mean(valid_pixels))
+                            altitud_min = float(np.min(valid_pixels))
+                            altitud_max = float(np.max(valid_pixels))
                             
-                            # Enmascaramos el raster usando el polígono
-                            out_image, out_transform = mask(src, gdf_zona_dem.geometry, crop=True, nodata=src.nodata)
-                            
-                            # Filtramos los píxeles válidos (ignorando océanos y nodata)
-                            valid_pixels = out_image[(out_image != src.nodata) & (out_image > -500)]
-                            
-                            if len(valid_pixels) > 0:
-                                altitud_m = float(np.mean(valid_pixels))
-                                altitud_min = float(np.min(valid_pixels))
-                                altitud_max = float(np.max(valid_pixels))
-                                
-                                # Guardamos en memoria global
-                                st.session_state['aleph_altitud_m'] = altitud_m
-                                st.session_state['aleph_altitud_min'] = altitud_min
-                                st.session_state['aleph_altitud_max'] = altitud_max
-                                exito_dem = True
+                            # Guardamos en memoria global para que sirva a toda la plataforma
+                            st.session_state['aleph_altitud_m'] = altitud_m
+                            st.session_state['aleph_altitud_min'] = altitud_min
+                            st.session_state['aleph_altitud_max'] = altitud_max
+                            exito_dem = True
                 except Exception as e:
-                    print(f"Error extrayendo estadísticas zonales del DEM: {e}")
+                    print(f"Aviso DEM: Extracción zonal omitida ({e}).")
                 
                 # 3. Fallback: Promedio topográfico de las estaciones locales (Si falla el DEM)
                 if not exito_dem:
@@ -6421,11 +6421,11 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
                             col_alt = next((c for c in gdf_filt.columns if 'alt' in c.lower() or 'ele' in c.lower() or 'msnm' in c.lower()), None)
                         
                         if col_alt:
-                            alt_promedio = pd.to_numeric(gdf_filt[col_alt], errors='coerce').mean()
-                            if pd.notna(alt_promedio) and alt_promedio > 0:
-                                altitud_m = float(alt_promedio)
-                                altitud_min = float(pd.to_numeric(gdf_filt[col_alt], errors='coerce').min())
-                                altitud_max = float(pd.to_numeric(gdf_filt[col_alt], errors='coerce').max())
+                            altitudes_validas = pd.to_numeric(gdf_filt[col_alt], errors='coerce').dropna()
+                            if not altitudes_validas.empty and float(altitudes_validas.mean()) > 0:
+                                altitud_m = float(altitudes_validas.mean())
+                                altitud_min = float(altitudes_validas.min())
+                                altitud_max = float(altitudes_validas.max())
                                 
                                 st.session_state['aleph_altitud_m'] = altitud_m
                                 st.session_state['aleph_altitud_min'] = altitud_min
@@ -6455,7 +6455,7 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
     temp_base = 28.0 - (0.006 * altitud_m)
     
     # Etiqueta de contexto enriquecida
-    st.markdown(f"> **⚙️ Contexto del Simulador:** Territorio: `{nombre_zona}` | Área: `{area_km2:,.1f} km²` | Población: `{pob_total:,.0f} hab` | Elevación: `{altitud_m:,.0f} msnm` *(Mín: {altitud_min:,.0f} m | Máx: {altitud_max:,.0f} m)*")    
+    st.markdown(f"> **⚙️ Contexto del Simulador:** Territorio: `{nombre_zona}` | Área: `{area_km2:,.1f} km²` | Población: `{pob_total:,.0f} hab` | Elevación: `{altitud_m:,.0f} msnm` *(Mín: {altitud_min:,.0f} m | Máx: {altitud_max:,.0f} m)*")
 
     # ==================================================================
     # 2. PANEL DE CONTROL ESTRUCTURAL
