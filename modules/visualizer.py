@@ -6345,22 +6345,20 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
     import streamlit as st
 
     st.subheader("🌀 Dinámica de Sistemas: Impactos en Cascada del ENSO")
-    
+    st.info("💡 **Análisis Comparativo (A/B Testing):** Evalúa el estrés del territorio comparando un escenario histórico neutro frente al pronóstico ENSO u otras simulaciones extremas.")
+
     # ==================================================================
-    # 1. TELEMETRÍA ESTRUCTURAL (Extracción y Validación Limpia)
+    # 1. TELEMETRÍA ESTRUCTURAL 
     # ==================================================================
     pob_total = st.session_state.get('aleph_pob_total', 0)
     area_km2 = st.session_state.get('aleph_area_km2', 0.0)
     altitud_m = st.session_state.get('aleph_altitud_m', 1500.0)
     rurh_m3s = st.session_state.get('aleph_concesiones_m3s', 0.0)
     
-    # Rescate Espacial de Emergencia
     if area_km2 == 0 and gdf_zona is not None and not gdf_zona.empty:
-        try:
-            area_km2 = gdf_zona.to_crs(epsg=3116).area.sum() / 1e6
+        try: area_km2 = gdf_zona.to_crs(epsg=3116).area.sum() / 1e6
         except: pass
             
-    # Auditoría de Calidad
     alertas_criticas = []
     if area_km2 <= 0:
         area_km2 = 100.0
@@ -6369,15 +6367,14 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
         pob_total = 50000
         alertas_criticas.append("Población no detectada (Usando 50,000 hab).")
         
-    # Solo mostramos la alerta si REALMENTE falta información
     if alertas_criticas:
-        st.warning(f"⚠️ **Telemetría Incompleta:** {' | '.join(alertas_criticas)} Ejecuta el modelo en 'Mapas Avanzados' o verifica la selección en el menú lateral.")
+        st.warning(f"⚠️ **Telemetría Incompleta:** {' | '.join(alertas_criticas)}")
     
     temp_base = 28.0 - (0.006 * altitud_m)
     st.markdown(f"> **⚙️ Contexto del Simulador:** Territorio: `{nombre_zona}` | Área: `{area_km2:,.1f} km²` | Población: `{pob_total:,.0f} hab` | Altitud Media: `{altitud_m:,.0f} m`")
 
     # ==================================================================
-    # 2. PANEL DE CONTROL ESTRUCTURAL (Sin cruce de estados)
+    # 2. PANEL DE CONTROL ESTRUCTURAL
     # ==================================================================
     st.markdown("#### 1. Configuración del Forzamiento Climático")
     
@@ -6386,37 +6383,32 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
         meses_proyeccion = st.slider("Horizonte de Simulación (Meses)", 12, 36, 24)
         
     with c2:
-        opc_envivo = "🔮 Usar Pronóstico en Vivo (NOAA/IRI)"
-        opc_nino = "🔥 El Niño Extremo Sostenido (+2.0)"
-        opc_nina = "💧 La Niña Extrema Sostenida (-2.0)"
+        opc_envivo = "🔮 Pronóstico en Vivo (NOAA/IRI)"
+        opc_nino = "🔥 El Niño Extremo (+2.0)"
+        opc_nina = "💧 La Niña Extrema (-2.0)"
         opc_manual = "🎛️ Modulación Manual"
         
-        tipo_escenario = st.radio("Seleccionar Escenario ONI (Oceanic Niño Index):", [opc_envivo, opc_nino, opc_nina, opc_manual], horizontal=True)
+        tipo_escenario = st.radio("Escenario a contrastar vs Línea Base (ONI=0):", [opc_envivo, opc_nino, opc_nina, opc_manual], horizontal=True)
         
-    # Construcción Matemática Estricta de la Señal ENSO
     oni_array = np.zeros(meses_proyeccion)
+    oni_base_array = np.zeros(meses_proyeccion) # Escenario Neutral
     
     if tipo_escenario == opc_envivo:
         prob_nino = st.session_state.get('aleph_iri_nino', 0) / 100.0
         prob_nina = st.session_state.get('aleph_iri_nina', 0) / 100.0
-        
         oni_esperado = (prob_nino * 1.5) + (prob_nina * -1.5)
-        # Curva acampanada simulando el ciclo de vida del fenómeno
         for t in range(meses_proyeccion):
             if t < 6: oni_array[t] = oni_esperado * (t/6) 
             elif t < 12: oni_array[t] = oni_esperado * ((12-t)/6) 
             else: oni_array[t] = 0 
-            
     elif tipo_escenario == opc_nino:
         oni_array = np.full(meses_proyeccion, 2.0)
     elif tipo_escenario == opc_nina:
         oni_array = np.full(meses_proyeccion, -2.0)
     elif tipo_escenario == opc_manual:
-        # El slider SÓLO existe si el usuario elige "Manual"
         val_manual = st.slider("Ajuste del Valor ONI", -2.5, 2.5, 1.0, 0.1)
         oni_array = np.full(meses_proyeccion, val_manual)
 
-    # Base de precipitación histórica
     if df_monthly_filtered is not None and not df_monthly_filtered.empty:
         df_mensual = df_monthly_filtered.copy()
         if 'MES_NUM' not in df_mensual.columns:
@@ -6425,57 +6417,99 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
             else: df_mensual['MES_NUM'] = 1 
                 
         climatologia = df_mensual.groupby('MES_NUM')[Config.PRECIPITATION_COL].mean()
-        precip_base_array = [climatologia.get((t % 12) + 1, 150.0) for t in range(meses_proyeccion)]
+        precip_base_array = [climatologia.get((pd.Timestamp.today().month + t - 1) % 12 + 1, 150.0) for t in range(meses_proyeccion)]
     else:
         precip_base_array = [150.0] * meses_proyeccion
 
     # ==================================================================
-    # 3. EJECUCIÓN Y RENDERIZADO 
+    # 3. FUNCIÓN GENERADORA DE GRÁFICOS (Para reusar en 2 columnas)
     # ==================================================================
-    if st.button("🚀 Ejecutar Simulación de Impactos en Cascada", type="primary"):
-        with st.spinner("Integrando ecuaciones del sistema socio-ecológico..."):
+    def plot_escenario_dinamico(df_data, titulo_corto):
+        # 1. Clima y Agua
+        fig_hidro = make_subplots(specs=[[{"secondary_y": True}]])
+        fig_hidro.add_trace(go.Bar(x=df_data['Fecha'], y=df_data['Precipitación (mm)'], name="Lluvia", marker_color="#3498db", opacity=0.7), secondary_y=False)
+        fig_hidro.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['ONI'], name="ONI", line=dict(color="red", width=2, dash="dot")), secondary_y=True)
+        fig_hidro.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Reservas (Hm3)'], name="Reservas", line=dict(color="#2980b9", width=3)), secondary_y=False)
+        fig_hidro.update_layout(title=f"Agua y Clima ({titulo_corto})", height=320, hovermode="x unified", margin=dict(l=10, r=10, t=40, b=10), showlegend=False)
+        fig_hidro.update_yaxes(title_text="mm / Hm³", secondary_y=False)
+        fig_hidro.update_yaxes(title_text="ONI", secondary_y=True, range=[-2.5, 2.5])
+        
+        # 2. Cascada de Impactos
+        fig_impact = go.Figure()
+        fig_impact.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Humedad Suelo (%)'], name="Humedad Suelo", fill='tozeroy', fillcolor="rgba(46, 204, 113, 0.2)", line=dict(color="#27ae60")))
+        fig_impact.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Riesgo Incendios (0-100)'], name="Incendios", line=dict(color="#e74c3c", width=2)))
+        fig_impact.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Estrés Urbano/Calidad (0-100)'], name="Calidad Aire", line=dict(color="#8e44ad", width=2, dash="dash")))
+        fig_impact.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Desabastecimiento (0-100)'], name="Déficit Agua", line=dict(color="#f39c12", width=2)))
+        fig_impact.update_layout(title=f"Riesgos Socio-Ecológicos ({titulo_corto})", height=320, hovermode="x unified", margin=dict(l=10, r=10, t=40, b=10), showlegend=False)
+        fig_impact.update_yaxes(range=[0, 100])
+        
+        # Marcar Meses Críticos (Vientos)
+        for d in df_data[df_data['Mes_Anio'] == 8]['Fecha']:
+            fig_impact.add_vline(x=d, line_width=1, line_dash="dash", line_color="orange", opacity=0.5)
+            
+        return fig_hidro, fig_impact
+
+    # ==================================================================
+    # 4. EJECUCIÓN Y RENDERIZADO COMPARATIVO
+    # ==================================================================
+    if st.button("🚀 Ejecutar Simulación Comparativa (Dual)", type="primary"):
+        with st.spinner("Procesando realidades paralelas y A/B Testing..."):
             try:
                 from modules.system_dynamics import run_enso_system_dynamics
+                
+                # A. Correr Línea Base (ONI = 0)
+                df_base = run_enso_system_dynamics(
+                    meses_simulacion=meses_proyeccion, oni_mensual=oni_base_array,
+                    precip_base_mensual=precip_base_array, temp_base=temp_base,
+                    area_cuenca_km2=area_km2, poblacion_servida=pob_total, caudal_rurh_m3s=rurh_m3s
+                )
+                
+                # B. Correr Escenario Modificado
                 df_sim = run_enso_system_dynamics(
                     meses_simulacion=meses_proyeccion, oni_mensual=oni_array,
                     precip_base_mensual=precip_base_array, temp_base=temp_base,
                     area_cuenca_km2=area_km2, poblacion_servida=pob_total, caudal_rurh_m3s=rurh_m3s
                 )
                 
-                estado_conexion = "✅ Simulación conectada a la red global de la NOAA." if tipo_escenario == opc_envivo else "✅ Simulación paramétrica completada."
-                st.success(estado_conexion)
+                st.success("✅ Matrices de simulación sincronizadas con éxito.")
+                st.markdown("---")
                 
-                # GRÁFICO 1: RESPUESTA CLIMÁTICA
-                st.markdown("#### 2. Forzamiento Climático y Respuesta Hídrica")
-                fig1 = make_subplots(specs=[[{"secondary_y": True}]])
-                fig1.add_trace(go.Bar(x=df_sim['Mes'], y=df_sim['Precipitación (mm)'], name="Lluvia Simulada", marker_color="#3498db", opacity=0.7), secondary_y=False)
-                fig1.add_trace(go.Scatter(x=df_sim['Mes'], y=df_sim['ONI'], name="Índice ONI", line=dict(color="red", width=2, dash="dot")), secondary_y=True)
-                fig1.add_trace(go.Scatter(x=df_sim['Mes'], y=df_sim['Reservas (Hm3)'], name="Almacenamiento (Hm³)", line=dict(color="#2980b9", width=3)), secondary_y=False)
-                fig1.update_layout(height=400, hovermode="x unified", legend=dict(orientation="h", y=1.1))
-                fig1.update_yaxes(title_text="Agua (mm / Hm³)", secondary_y=False)
-                fig1.update_yaxes(title_text="Anomalía ONI (°C)", secondary_y=True)
-                st.plotly_chart(fig1, use_container_width=True)
+                # RENDERIZAR COLUMNAS LADO A LADO
+                col_izq, col_der = st.columns(2)
                 
-                # GRÁFICO 2: IMPACTOS
-                st.markdown("#### 3. Cascada de Impactos Socio-Ecológicos")
-                st.info("💡 **Lectura Sistémica:** Observa cómo la pérdida de humedad del suelo detona el riesgo de incendios y, posteriormente, el estrés urbano (calidad del aire/agua).")
+                with col_izq:
+                    st.markdown("### 🌿 Escenario A: Línea Base Histórica")
+                    st.caption("Comportamiento esperado del territorio si las condiciones oceánicas permanecen neutras (ONI = 0).")
+                    fig_h_base, fig_i_base = plot_escenario_dinamico(df_base, "Base")
+                    st.plotly_chart(fig_h_base, use_container_width=True)
+                    st.plotly_chart(fig_i_base, use_container_width=True)
                 
-                fig2 = go.Figure()
-                fig2.add_trace(go.Scatter(x=df_sim['Mes'], y=df_sim['Humedad Suelo (%)'], name="Humedad del Suelo", fill='tozeroy', fillcolor="rgba(46, 204, 113, 0.2)", line=dict(color="#27ae60")))
-                fig2.add_trace(go.Scatter(x=df_sim['Mes'], y=df_sim['Riesgo Incendios (0-100)'], name="Riesgo Incendios/Biodiversidad", line=dict(color="#e74c3c", width=3)))
-                fig2.add_trace(go.Scatter(x=df_sim['Mes'], y=df_sim['Estrés Urbano/Calidad (0-100)'], name="Estrés Urbano (Inversión Térmica)", line=dict(color="#8e44ad", width=2, dash="dash")))
-                fig2.add_trace(go.Scatter(x=df_sim['Mes'], y=df_sim['Desabastecimiento (0-100)'], name="Riesgo Desabastecimiento", line=dict(color="#f39c12", width=3)))
-                
-                fig2.update_layout(height=450, yaxis_title="Índice de Riesgo (0 = Normal, 100 = Crítico)", hovermode="x unified", legend=dict(orientation="h", y=-0.1))
-                
-                for t in df_sim[df_sim['Mes_Anio'] == 8]['Mes']:
-                    fig2.add_vline(x=t, line_width=1, line_dash="dash", line_color="orange", annotation_text="Agosto (Vientos)")
-                    
-                st.plotly_chart(fig2, use_container_width=True)
-                
-                with st.expander("📊 Ver Tabla de Simulación Completa"):
-                    st.dataframe(df_sim.style.background_gradient(cmap="Reds", subset=['Riesgo Incendios (0-100)', 'Estrés Urbano/Calidad (0-100)', 'Desabastecimiento (0-100)']))
-                    csv = df_sim.to_csv(index=False).encode('utf-8')
-                    st.download_button("📥 Descargar Proyección (CSV)", csv, "Simulacion_Dinamica_ENSO.csv", "text/csv")
+                with col_der:
+                    nombre_escenario_corto = tipo_escenario.split(" ")[1] if "Usar" not in tipo_escenario else "Pronóstico NOAA"
+                    st.markdown(f"### 🌪️ Escenario B: {nombre_escenario_corto}")
+                    st.caption("Respuesta del territorio proyectada bajo la anomalía oceánica seleccionada.")
+                    fig_h_sim, fig_i_sim = plot_escenario_dinamico(df_sim, "Proyectado")
+                    st.plotly_chart(fig_h_sim, use_container_width=True)
+                    st.plotly_chart(fig_i_sim, use_container_width=True)
+
+                # Leyenda Unificada
+                st.markdown("""
+                **📖 Leyenda de Impactos Socio-Ecológicos:**
+                🟢 **Humedad del Suelo:** Agua retenida útil para ecosistemas. | 🔴 **Incendios:** Probabilidad de fuego forestal.
+                🟣 **Calidad del Aire:** Riesgo de inversión térmica y mala dilución. | 🟠 **Déficit de Agua:** Estrés en reservas para demanda antrópica.
+                *(Nota: Las líneas verticales naranjas marcan el mes de Agosto, caracterizado por fuertes vientos alisios).*
+                """)
+
+                # Descargas
+                with st.expander("📊 Ver Tablas de Datos y Exportar"):
+                    tab_base, tab_esc = st.tabs(["Tabla Línea Base", "Tabla Escenario Proyectado"])
+                    with tab_base:
+                        st.dataframe(df_base)
+                    with tab_esc:
+                        st.dataframe(df_sim.style.background_gradient(cmap="Reds", subset=['Riesgo Incendios (0-100)', 'Desabastecimiento (0-100)']))
+                        
+                    csv_export = df_sim.copy()
+                    csv_export['Fecha'] = csv_export['Fecha'].dt.strftime('%Y-%m')
+                    st.download_button("📥 Descargar Escenario Proyectado (CSV)", csv_export.to_csv(index=False).encode('utf-8'), "Simulacion_ENSO_Comparativa.csv", "text/csv")
             except Exception as e:
                 st.error(f"Error ejecutando la simulación: {e}. Revisa system_dynamics.py.")
