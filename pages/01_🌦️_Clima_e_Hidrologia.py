@@ -736,8 +736,8 @@ def main():
     elif selected_module == "🌀 Dinámica de Sistemas": 
         viz.display_enso_system_dynamics_tab(
             df_monthly_filtered=display_args["df_monthly_filtered"],
-            nombre_zona=display_args["nombre_zona"]
-        )   
+            nombre_zona=nombre_zona
+        )
     
 # --- MÓDULO: MAPAS AVANZADOS (VERSIÓN DEFINITIVA CORREGIDA) ---
     elif selected_module == "🌍 Mapas Avanzados":
