@@ -6430,7 +6430,15 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
         fig_hidro.add_trace(go.Bar(x=df_data['Fecha'], y=df_data['Precipitación (mm)'], name="Lluvia", marker_color="#3498db", opacity=0.7), secondary_y=False)
         fig_hidro.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['ONI'], name="ONI", line=dict(color="red", width=2, dash="dot")), secondary_y=True)
         fig_hidro.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Reservas (Hm3)'], name="Reservas", line=dict(color="#2980b9", width=3)), secondary_y=False)
-        fig_hidro.update_layout(title=f"Agua y Clima ({titulo_corto})", height=320, hovermode="x unified", margin=dict(l=10, r=10, t=40, b=10), showlegend=False)
+        
+        fig_hidro.update_layout(
+            title=f"Agua y Clima ({titulo_corto})", 
+            height=380, # Altura ajustada para dar espacio a la leyenda
+            hovermode="x unified", 
+            margin=dict(l=10, r=10, t=40, b=10), 
+            showlegend=True, # 🛡️ Leyenda Activada
+            legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5) # Anclada abajo, centrada
+        )
         fig_hidro.update_yaxes(title_text="mm / Hm³", secondary_y=False)
         fig_hidro.update_yaxes(title_text="ONI", secondary_y=True, range=[-2.5, 2.5])
         
@@ -6440,7 +6448,15 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
         fig_impact.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Riesgo Incendios (0-100)'], name="Incendios", line=dict(color="#e74c3c", width=2)))
         fig_impact.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Estrés Urbano/Calidad (0-100)'], name="Calidad Aire", line=dict(color="#8e44ad", width=2, dash="dash")))
         fig_impact.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Desabastecimiento (0-100)'], name="Déficit Agua", line=dict(color="#f39c12", width=2)))
-        fig_impact.update_layout(title=f"Riesgos Socio-Ecológicos ({titulo_corto})", height=320, hovermode="x unified", margin=dict(l=10, r=10, t=40, b=10), showlegend=False)
+        
+        fig_impact.update_layout(
+            title=f"Riesgos Socio-Ecológicos ({titulo_corto})", 
+            height=380, # Altura ajustada
+            hovermode="x unified", 
+            margin=dict(l=10, r=10, t=40, b=10), 
+            showlegend=True, # 🛡️ Leyenda Activada
+            legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5) # Anclada abajo, centrada
+        )
         fig_impact.update_yaxes(range=[0, 100])
         
         # Marcar Meses Críticos (Vientos)
@@ -6448,7 +6464,7 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
             fig_impact.add_vline(x=d, line_width=1, line_dash="dash", line_color="orange", opacity=0.5)
             
         return fig_hidro, fig_impact
-
+        
     # ==================================================================
     # 4. EJECUCIÓN Y RENDERIZADO COMPARATIVO
     # ==================================================================
