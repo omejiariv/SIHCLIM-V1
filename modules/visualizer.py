@@ -6348,28 +6348,96 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
     st.info("💡 **Análisis Comparativo (A/B Testing):** Evalúa el estrés del territorio comparando un escenario histórico neutro frente al pronóstico ENSO u otras simulaciones extremas.")
 
     # ==================================================================
-    # 1. TELEMETRÍA ESTRUCTURAL (Extracción y Validación Limpia)
+    # 1. TELEMETRÍA ESTRUCTURAL (Extracción Topográfica y Validación)
     # ==================================================================
     pob_total = st.session_state.get('aleph_pob_total', 0)
     area_km2 = st.session_state.get('aleph_area_km2', 0.0)
-    altitud_m = st.session_state.get('aleph_altitud_m', 1500.0)
     rurh_m3s = st.session_state.get('aleph_concesiones_m3s', 0.0)
     
-    # 🛡️ Rescate Espacial de Emergencia (Con inyección de CRS)
-    if area_km2 <= 0 and gdf_zona is not None and not gdf_zona.empty:
+    # 🚀 Forzamos el rescate de la altitud para limpiar sesgos o valores quemados
+    altitud_m = st.session_state.get('aleph_altitud_m', 0.0) 
+    altitud_min = st.session_state.get('aleph_altitud_min', 0.0)
+    altitud_max = st.session_state.get('aleph_altitud_max', 0.0)
+    
+    if altitud_m == 1500.0: 
+        altitud_m = 0.0 
+    
+    # 🛡️ Escudo de Rescate Espacial Dinámico (Área y Topografía Real)
+    if (area_km2 <= 0 or altitud_m <= 0) and gdf_zona is not None and not gdf_zona.empty:
         try:
+            import pandas as pd
+            import numpy as np
+            from modules.config import Config
+            
             gdf_zona_calc = gdf_zona.copy()
-            # Si la geometría viene 'cruda' de la BD, le forzamos el sistema WGS84
             if gdf_zona_calc.crs is None:
                 gdf_zona_calc.set_crs("EPSG:4326", inplace=True)
             
-            # Proyectamos a Magna Sirgas (EPSG:3116) y calculamos el área
-            area_km2 = gdf_zona_calc.to_crs(epsg=3116).area.sum() / 1e6
-            
-            # Guardamos en sesión para que otros módulos no tengan que recalcular
-            st.session_state['aleph_area_km2'] = area_km2
+            # 1. Rescate de Área (Polígono a Metros Cuadrados)
+            if area_km2 <= 0:
+                area_km2 = gdf_zona_calc.to_crs(epsg=3116).area.sum() / 1e6
+                st.session_state['aleph_area_km2'] = area_km2
+                
+            # 2. Rescate de Altitud (Extracción Zonal Directa desde el DEM)
+            if altitud_m <= 0:
+                exito_dem = False
+                
+                # Intentamos extraer del DEM local/nube
+                try:
+                    import rasterio
+                    from rasterio.mask import mask
+                    import os
+                    
+                    if hasattr(Config, 'DEM_FILE_PATH') and os.path.exists(Config.DEM_FILE_PATH):
+                        with rasterio.open(Config.DEM_FILE_PATH) as src:
+                            # Proyectamos el polígono al mismo CRS que el DEM
+                            gdf_zona_dem = gdf_zona_calc.to_crs(src.crs)
+                            
+                            # Enmascaramos el raster usando el polígono
+                            out_image, out_transform = mask(src, gdf_zona_dem.geometry, crop=True, nodata=src.nodata)
+                            
+                            # Filtramos los píxeles válidos (ignorando océanos y nodata)
+                            valid_pixels = out_image[(out_image != src.nodata) & (out_image > -500)]
+                            
+                            if len(valid_pixels) > 0:
+                                altitud_m = float(np.mean(valid_pixels))
+                                altitud_min = float(np.min(valid_pixels))
+                                altitud_max = float(np.max(valid_pixels))
+                                
+                                # Guardamos en memoria global
+                                st.session_state['aleph_altitud_m'] = altitud_m
+                                st.session_state['aleph_altitud_min'] = altitud_min
+                                st.session_state['aleph_altitud_max'] = altitud_max
+                                exito_dem = True
+                except Exception as e:
+                    print(f"Error extrayendo estadísticas zonales del DEM: {e}")
+                
+                # 3. Fallback: Promedio topográfico de las estaciones locales (Si falla el DEM)
+                if not exito_dem:
+                    gdf_filt = kwargs.get('gdf_filtered')
+                    if gdf_filt is not None and not gdf_filt.empty:
+                        col_alt = getattr(Config, 'ALTITUDE_COL', 'altitud')
+                        if col_alt not in gdf_filt.columns:
+                            col_alt = next((c for c in gdf_filt.columns if 'alt' in c.lower() or 'ele' in c.lower() or 'msnm' in c.lower()), None)
+                        
+                        if col_alt:
+                            alt_promedio = pd.to_numeric(gdf_filt[col_alt], errors='coerce').mean()
+                            if pd.notna(alt_promedio) and alt_promedio > 0:
+                                altitud_m = float(alt_promedio)
+                                altitud_min = float(pd.to_numeric(gdf_filt[col_alt], errors='coerce').min())
+                                altitud_max = float(pd.to_numeric(gdf_filt[col_alt], errors='coerce').max())
+                                
+                                st.session_state['aleph_altitud_m'] = altitud_m
+                                st.session_state['aleph_altitud_min'] = altitud_min
+                                st.session_state['aleph_altitud_max'] = altitud_max
         except Exception as e: 
-            print(f"Error en rescate de área: {e}")
+            print(f"Error en rescate espacial: {e}")
+
+    # Fallback final (Solo si el territorio no tiene geometría, DEM, ni estaciones)
+    if altitud_m <= 0: 
+        altitud_m = 1500.0
+        altitud_min = 1500.0
+        altitud_max = 1500.0
             
     # Auditoría de Calidad
     alertas_criticas = []
@@ -6383,9 +6451,12 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
     if alertas_criticas:
         st.warning(f"⚠️ **Telemetría Incompleta:** {' | '.join(alertas_criticas)}")
     
+    # Cálculo termodinámico base (Temperatura Media del Territorio)
     temp_base = 28.0 - (0.006 * altitud_m)
-    st.markdown(f"> **⚙️ Contexto del Simulador:** Territorio: `{nombre_zona}` | Área: `{area_km2:,.1f} km²` | Población: `{pob_total:,.0f} hab` | Altitud Media: `{altitud_m:,.0f} m`")
     
+    # Etiqueta de contexto enriquecida
+    st.markdown(f"> **⚙️ Contexto del Simulador:** Territorio: `{nombre_zona}` | Área: `{area_km2:,.1f} km²` | Población: `{pob_total:,.0f} hab` | Elevación: `{altitud_m:,.0f} msnm` *(Mín: {altitud_min:,.0f} m | Máx: {altitud_max:,.0f} m)*")    
+
     # ==================================================================
     # 2. PANEL DE CONTROL ESTRUCTURAL
     # ==================================================================
