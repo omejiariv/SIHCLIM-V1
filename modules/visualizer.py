@@ -6345,101 +6345,24 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
     import streamlit as st
 
     st.subheader("🌀 Dinámica de Sistemas: Impactos en Cascada del ENSO")
-    st.info("💡 **Análisis Comparativo (A/B Testing):** Evalúa el estrés del territorio comparando un escenario histórico neutro frente al pronóstico ENSO u otras simulaciones extremas.")
+    st.info("💡 **Modelo Híbrido Estocástico-Mecanicista:** Integra las proyecciones probabilísticas de Prophet con modelos de balance de masa para simular el impacto climático.")
 
     # ==================================================================
-    # 1. TELEMETRÍA ESTRUCTURAL (Extracción Topográfica y Validación)
+    # 1. TELEMETRÍA ESTRUCTURAL 
     # ==================================================================
     pob_total = st.session_state.get('aleph_pob_total', 0)
     area_km2 = st.session_state.get('aleph_area_km2', 0.0)
+    altitud_m = st.session_state.get('aleph_altitud_m', 1500.0)
     rurh_m3s = st.session_state.get('aleph_concesiones_m3s', 0.0)
     
-    # 🚀 Forzamos el rescate de la altitud para limpiar sesgos o valores quemados
-    altitud_m = st.session_state.get('aleph_altitud_m', 0.0) 
-    altitud_min = st.session_state.get('aleph_altitud_min', 0.0)
-    altitud_max = st.session_state.get('aleph_altitud_max', 0.0)
-    
-    if altitud_m == 1500.0: 
-        altitud_m = 0.0 
-    
-    # 🛡️ Escudo de Rescate Espacial Dinámico (Área y Topografía Real)
-    if (area_km2 <= 0 or altitud_m <= 0) and gdf_zona is not None and not gdf_zona.empty:
+    if area_km2 <= 0 and gdf_zona is not None and not gdf_zona.empty:
         try:
-            import pandas as pd
-            import numpy as np
-            from modules.config import Config
-            
             gdf_zona_calc = gdf_zona.copy()
-            if gdf_zona_calc.crs is None:
-                gdf_zona_calc.set_crs("EPSG:4326", inplace=True)
+            if gdf_zona_calc.crs is None: gdf_zona_calc.set_crs("EPSG:4326", inplace=True)
+            area_km2 = gdf_zona_calc.to_crs(epsg=3116).area.sum() / 1e6
+            st.session_state['aleph_area_km2'] = area_km2
+        except: pass
             
-            # 1. Rescate de Área (Polígono a Metros Cuadrados)
-            if area_km2 <= 0:
-                area_km2 = gdf_zona_calc.to_crs(epsg=3116).area.sum() / 1e6
-                st.session_state['aleph_area_km2'] = area_km2
-                
-            # 2. Rescate de Altitud (Extracción Zonal Directa desde el DEM)
-            if altitud_m <= 0:
-                exito_dem = False
-                
-                # Intentamos extraer del DEM (Sin os.path.exists para soportar URLs de Nube/Supabase)
-                try:
-                    import rasterio
-                    from rasterio.mask import mask
-                    
-                    dem_path = getattr(Config, 'DEM_FILE_PATH', 'data/dem_antioquia.tif')
-                    
-                    with rasterio.open(dem_path) as src:
-                        # Proyectamos el polígono al mismo CRS que el DEM
-                        gdf_zona_dem = gdf_zona_calc.to_crs(src.crs)
-                        
-                        # Enmascaramos el raster usando el polígono
-                        out_image, out_transform = mask(src, gdf_zona_dem.geometry, crop=True, nodata=src.nodata)
-                        
-                        # Filtramos los píxeles válidos (ignorando nodata y errores de bordes)
-                        valid_pixels = out_image[(out_image != src.nodata) & (out_image > -500)]
-                        
-                        if len(valid_pixels) > 0:
-                            altitud_m = float(np.mean(valid_pixels))
-                            altitud_min = float(np.min(valid_pixels))
-                            altitud_max = float(np.max(valid_pixels))
-                            
-                            # Guardamos en memoria global para que sirva a toda la plataforma
-                            st.session_state['aleph_altitud_m'] = altitud_m
-                            st.session_state['aleph_altitud_min'] = altitud_min
-                            st.session_state['aleph_altitud_max'] = altitud_max
-                            exito_dem = True
-                except Exception as e:
-                    print(f"Aviso DEM: Extracción zonal omitida ({e}).")
-                
-                # 3. Fallback: Promedio topográfico de las estaciones locales (Si falla el DEM)
-                if not exito_dem:
-                    gdf_filt = kwargs.get('gdf_filtered')
-                    if gdf_filt is not None and not gdf_filt.empty:
-                        col_alt = getattr(Config, 'ALTITUDE_COL', 'altitud')
-                        if col_alt not in gdf_filt.columns:
-                            col_alt = next((c for c in gdf_filt.columns if 'alt' in c.lower() or 'ele' in c.lower() or 'msnm' in c.lower()), None)
-                        
-                        if col_alt:
-                            altitudes_validas = pd.to_numeric(gdf_filt[col_alt], errors='coerce').dropna()
-                            if not altitudes_validas.empty and float(altitudes_validas.mean()) > 0:
-                                altitud_m = float(altitudes_validas.mean())
-                                altitud_min = float(altitudes_validas.min())
-                                altitud_max = float(altitudes_validas.max())
-                                
-                                st.session_state['aleph_altitud_m'] = altitud_m
-                                st.session_state['aleph_altitud_min'] = altitud_min
-                                st.session_state['aleph_altitud_max'] = altitud_max
-        except Exception as e: 
-            print(f"Error en rescate espacial: {e}")
-
-    # Fallback final (Solo si el territorio no tiene geometría, DEM, ni estaciones)
-    if altitud_m <= 0: 
-        altitud_m = 1500.0
-        altitud_min = 1500.0
-        altitud_max = 1500.0
-            
-    # Auditoría de Calidad
     alertas_criticas = []
     if area_km2 <= 0:
         area_km2 = 100.0
@@ -6451,11 +6374,8 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
     if alertas_criticas:
         st.warning(f"⚠️ **Telemetría Incompleta:** {' | '.join(alertas_criticas)}")
     
-    # Cálculo termodinámico base (Temperatura Media del Territorio)
     temp_base = 28.0 - (0.006 * altitud_m)
-    
-    # Etiqueta de contexto enriquecida
-    st.markdown(f"> **⚙️ Contexto del Simulador:** Territorio: `{nombre_zona}` | Área: `{area_km2:,.1f} km²` | Población: `{pob_total:,.0f} hab` | Elevación: `{altitud_m:,.0f} msnm` *(Mín: {altitud_min:,.0f} m | Máx: {altitud_max:,.0f} m)*")
+    st.markdown(f"> **⚙️ Contexto del Simulador:** Territorio: `{nombre_zona}` | Área: `{area_km2:,.1f} km²` | Población: `{pob_total:,.0f} hab` | Elevación: `{altitud_m:,.0f} msnm`")
 
     # ==================================================================
     # 2. PANEL DE CONTROL ESTRUCTURAL
@@ -6464,7 +6384,7 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
     
     c1, c2 = st.columns([1, 2])
     with c1:
-        meses_proyeccion = st.slider("Horizonte de Simulación (Meses)", 12, 36, 24)
+        meses_proyeccion = st.slider("Horizonte de Simulación (Meses)", 12, 60, 24, key="slider_horizonte_enso")
         
     with c2:
         opc_envivo = "🔮 Pronóstico en Vivo (NOAA/IRI)"
@@ -6472,10 +6392,10 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
         opc_nina = "💧 La Niña Extrema (-2.0)"
         opc_manual = "🎛️ Modulación Manual"
         
-        tipo_escenario = st.radio("Escenario a contrastar vs Línea Base (ONI=0):", [opc_envivo, opc_nino, opc_nina, opc_manual], horizontal=True)
+        tipo_escenario = st.radio("Escenario a contrastar vs Línea Base (ONI=0):", [opc_envivo, opc_nino, opc_nina, opc_manual], horizontal=True, key="radio_tipo_enso")
         
     oni_array = np.zeros(meses_proyeccion)
-    oni_base_array = np.zeros(meses_proyeccion) # Escenario Neutral
+    oni_base_array = np.zeros(meses_proyeccion) 
     
     if tipo_escenario == opc_envivo:
         prob_nino = st.session_state.get('aleph_iri_nino', 0) / 100.0
@@ -6490,126 +6410,134 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
     elif tipo_escenario == opc_nina:
         oni_array = np.full(meses_proyeccion, -2.0)
     elif tipo_escenario == opc_manual:
-        val_manual = st.slider("Ajuste del Valor ONI", -2.5, 2.5, 1.0, 0.1)
+        val_manual = st.slider("Ajuste del Valor ONI", -2.5, 2.5, 1.0, 0.1, key="slider_val_manual_enso")
         oni_array = np.full(meses_proyeccion, val_manual)
 
-    if df_monthly_filtered is not None and not df_monthly_filtered.empty:
-        df_mensual = df_monthly_filtered.copy()
-        if 'MES_NUM' not in df_mensual.columns:
-            if 'fecha' in df_mensual.columns: df_mensual['MES_NUM'] = pd.to_datetime(df_mensual['fecha']).dt.month
-            elif 'MONTH' in df_mensual.columns: df_mensual['MES_NUM'] = df_mensual['MONTH']
-            else: df_mensual['MES_NUM'] = 1 
+    # ==================================================================
+    # 3. 🧠 ORQUESTADOR DE PROPHET: INYECCIÓN A DEMANDA (LAZY LOADING)
+    # ==================================================================
+    def obtener_proyeccion_prophet():
+        """Busca en memoria o calcula el pronóstico de Prophet al vuelo."""
+        # 1. ¿Ya existe y es de este territorio?
+        if 'aleph_prophet_df' in st.session_state and st.session_state.get('aleph_prophet_zona') == nombre_zona:
+            df_existente = st.session_state['aleph_prophet_df']
+            # Verificamos si tiene suficientes meses para el horizonte pedido
+            df_proy = df_existente[df_existente['tipo'] == 'Proyección'].copy()
+            if len(df_proy) >= meses_proyeccion:
+                return df_proy.head(meses_proyeccion)
                 
-        climatologia = df_mensual.groupby('MES_NUM')[Config.PRECIPITATION_COL].mean()
-        precip_base_array = [climatologia.get((pd.Timestamp.today().month + t - 1) % 12 + 1, 150.0) for t in range(meses_proyeccion)]
-    else:
-        precip_base_array = [150.0] * meses_proyeccion
+        # 2. Si no existe, lo calculamos al vuelo de manera invisible
+        from modules import hydrogeo_utils
+        if df_monthly_filtered is None or df_monthly_filtered.empty: return None
+        
+        # Acomodamos el DF al formato que Prophet espera (id_estacion, fecha, valor)
+        df_raw = df_monthly_filtered.copy()
+        if 'valor' not in df_raw.columns:
+            df_raw['valor'] = df_raw[Config.PRECIPITATION_COL]
+        if 'id_estacion' not in df_raw.columns:
+            df_raw['id_estacion'] = df_raw[Config.STATION_NAME_COL]
+            
+        with st.spinner("🧠 Despertando a Prophet: Entrenando modelo estocástico para la cuenca..."):
+            try:
+                # Usamos los parámetros base de infiltración (K_i = 0.5, K_g = 0.7)
+                df_res_completo = hydrogeo_utils.ejecutar_pronostico_prophet(
+                    df_raw, meses_futuros=60, altitud_media=altitud_m, ki_cobertura_suelo=0.5, ruido=0.1, kg=0.7, kc=0.8
+                )
+                if not df_res_completo.empty:
+                    # Lo guardamos en el Aleph para que "Aguas Subterráneas" lo encuentre listo
+                    st.session_state['aleph_prophet_df'] = df_res_completo
+                    st.session_state['aleph_prophet_zona'] = nombre_zona
+                    
+                    df_proy = df_res_completo[df_res_completo['tipo'] == 'Proyección'].copy()
+                    return df_proy.head(meses_proyeccion)
+            except Exception as e:
+                st.error(f"Error entrenando IA Prophet: {e}")
+                return None
+        return None
 
     # ==================================================================
-    # 3. FUNCIÓN GENERADORA DE GRÁFICOS (Para reusar en 2 columnas)
+    # 4. FUNCIÓN GENERADORA DE GRÁFICOS (Ahora con Recarga Subterránea)
     # ==================================================================
     def plot_escenario_dinamico(df_data, titulo_corto):
-        # 1. Clima y Agua
+        # 1. Clima y Recarga
         fig_hidro = make_subplots(specs=[[{"secondary_y": True}]])
-        fig_hidro.add_trace(go.Bar(x=df_data['Fecha'], y=df_data['Precipitación (mm)'], name="Lluvia", marker_color="#3498db", opacity=0.7), secondary_y=False)
+        fig_hidro.add_trace(go.Bar(x=df_data['Fecha'], y=df_data['Precipitación (mm)'], name="Lluvia", marker_color="#3498db", opacity=0.5), secondary_y=False)
+        fig_hidro.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Recarga Acuífero (mm)'], name="Recarga Acuífero", fill='tozeroy', line=dict(color="#2980b9", width=2)), secondary_y=False)
         fig_hidro.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['ONI'], name="ONI", line=dict(color="red", width=2, dash="dot")), secondary_y=True)
-        fig_hidro.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Reservas (Hm3)'], name="Reservas", line=dict(color="#2980b9", width=3)), secondary_y=False)
         
         fig_hidro.update_layout(
-            title=f"Agua y Clima ({titulo_corto})", 
-            height=380, # Altura ajustada para dar espacio a la leyenda
-            hovermode="x unified", 
-            margin=dict(l=10, r=10, t=40, b=10), 
-            showlegend=True, # 🛡️ Leyenda Activada
-            legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5) # Anclada abajo, centrada
+            title=f"Lluvia, Recarga Subterránea y Clima ({titulo_corto})", 
+            height=380, hovermode="x unified", margin=dict(l=10, r=10, t=40, b=10), 
+            showlegend=True, legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5)
         )
-        fig_hidro.update_yaxes(title_text="mm / Hm³", secondary_y=False)
-        fig_hidro.update_yaxes(title_text="ONI", secondary_y=True, range=[-2.5, 2.5])
+        fig_hidro.update_yaxes(title_text="Lámina de Agua (mm)", secondary_y=False)
+        fig_hidro.update_yaxes(title_text="Anomalía ONI", secondary_y=True, range=[-2.5, 2.5])
         
         # 2. Cascada de Impactos
         fig_impact = go.Figure()
-        fig_impact.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Humedad Suelo (%)'], name="Humedad Suelo", fill='tozeroy', fillcolor="rgba(46, 204, 113, 0.2)", line=dict(color="#27ae60")))
+        fig_impact.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Humedad Suelo (%)'], name="Humedad Suelo", line=dict(color="#27ae60", width=2)))
         fig_impact.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Riesgo Incendios (0-100)'], name="Incendios", line=dict(color="#e74c3c", width=2)))
-        fig_impact.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Estrés Urbano/Calidad (0-100)'], name="Calidad Aire", line=dict(color="#8e44ad", width=2, dash="dash")))
-        fig_impact.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Desabastecimiento (0-100)'], name="Déficit Agua", line=dict(color="#f39c12", width=2)))
+        fig_impact.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Estrés Urbano (0-100)'], name="Calidad Aire", line=dict(color="#8e44ad", width=2, dash="dash")))
+        fig_impact.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Desabastecimiento (0-100)'], name="Déficit Reservas", line=dict(color="#f39c12", width=3)))
         
         fig_impact.update_layout(
             title=f"Riesgos Socio-Ecológicos ({titulo_corto})", 
-            height=380, # Altura ajustada
-            hovermode="x unified", 
-            margin=dict(l=10, r=10, t=40, b=10), 
-            showlegend=True, # 🛡️ Leyenda Activada
-            legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5) # Anclada abajo, centrada
+            height=380, hovermode="x unified", margin=dict(l=10, r=10, t=40, b=10), 
+            showlegend=True, legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5)
         )
         fig_impact.update_yaxes(range=[0, 100])
-        
-        # Marcar Meses Críticos (Vientos)
-        for d in df_data[df_data['Mes_Anio'] == 8]['Fecha']:
-            fig_impact.add_vline(x=d, line_width=1, line_dash="dash", line_color="orange", opacity=0.5)
-            
         return fig_hidro, fig_impact
+
+    # ==================================================================
+    # 5. EJECUCIÓN 
+    # ==================================================================
+    if st.button("🚀 Ejecutar Simulación Comparativa (Prophet + Dinámica)", type="primary"):
+        df_proyeccion_base = obtener_proyeccion_prophet()
         
-    # ==================================================================
-    # 4. EJECUCIÓN Y RENDERIZADO COMPARATIVO
-    # ==================================================================
-    if st.button("🚀 Ejecutar Simulación Comparativa (Dual)", type="primary"):
-        with st.spinner("Procesando realidades paralelas y A/B Testing..."):
-            try:
-                from modules.system_dynamics import run_enso_system_dynamics
-                
-                # A. Correr Línea Base (ONI = 0)
-                df_base = run_enso_system_dynamics(
-                    meses_simulacion=meses_proyeccion, oni_mensual=oni_base_array,
-                    precip_base_mensual=precip_base_array, temp_base=temp_base,
-                    area_cuenca_km2=area_km2, poblacion_servida=pob_total, caudal_rurh_m3s=rurh_m3s
-                )
-                
-                # B. Correr Escenario Modificado
-                df_sim = run_enso_system_dynamics(
-                    meses_simulacion=meses_proyeccion, oni_mensual=oni_array,
-                    precip_base_mensual=precip_base_array, temp_base=temp_base,
-                    area_cuenca_km2=area_km2, poblacion_servida=pob_total, caudal_rurh_m3s=rurh_m3s
-                )
-                
-                st.success("✅ Matrices de simulación sincronizadas con éxito.")
-                st.markdown("---")
-                
-                # RENDERIZAR COLUMNAS LADO A LADO
-                col_izq, col_der = st.columns(2)
-                
-                with col_izq:
-                    st.markdown("### 🌿 Escenario A: Línea Base Histórica")
-                    st.caption("Comportamiento esperado del territorio si las condiciones oceánicas permanecen neutras (ONI = 0).")
-                    fig_h_base, fig_i_base = plot_escenario_dinamico(df_base, "Base")
-                    st.plotly_chart(fig_h_base, use_container_width=True)
-                    st.plotly_chart(fig_i_base, use_container_width=True)
-                
-                with col_der:
-                    nombre_escenario_corto = tipo_escenario.split(" ")[1] if "Usar" not in tipo_escenario else "Pronóstico NOAA"
-                    st.markdown(f"### 🌪️ Escenario B: {nombre_escenario_corto}")
-                    st.caption("Respuesta del territorio proyectada bajo la anomalía oceánica seleccionada.")
-                    fig_h_sim, fig_i_sim = plot_escenario_dinamico(df_sim, "Proyectado")
-                    st.plotly_chart(fig_h_sim, use_container_width=True)
-                    st.plotly_chart(fig_i_sim, use_container_width=True)
+        if df_proyeccion_base is not None:
+            with st.spinner("Procesando realidades paralelas y A/B Testing..."):
+                try:
+                    from modules.system_dynamics import run_enso_system_dynamics_prophet
+                    
+                    df_base = run_enso_system_dynamics_prophet(
+                        df_proyeccion=df_proyeccion_base, oni_mensual=oni_base_array,
+                        temp_base=temp_base, area_cuenca_km2=area_km2, 
+                        poblacion_servida=pob_total, caudal_rurh_m3s=rurh_m3s
+                    )
+                    
+                    df_sim = run_enso_system_dynamics_prophet(
+                        df_proyeccion=df_proyeccion_base, oni_mensual=oni_array,
+                        temp_base=temp_base, area_cuenca_km2=area_km2, 
+                        poblacion_servida=pob_total, caudal_rurh_m3s=rurh_m3s
+                    )
+                    
+                    st.success("✅ Matrices sincronizadas. Pronóstico Prophet inyectado con éxito.")
+                    st.markdown("---")
+                    
+                    col_izq, col_der = st.columns(2)
+                    with col_izq:
+                        st.markdown("### 🌿 Escenario A: Línea Base (Proyección Prophet)")
+                        st.caption("Tendencia natural esperada basada en historia, asumiendo ONI Neutral.")
+                        fig_h_base, fig_i_base = plot_escenario_dinamico(df_base, "Base")
+                        st.plotly_chart(fig_h_base, use_container_width=True)
+                        st.plotly_chart(fig_i_base, use_container_width=True)
+                    
+                    with col_der:
+                        st.markdown(f"### 🌪️ Escenario B: Estrés ENSO Proyectado")
+                        st.caption("Respuesta del territorio proyectada bajo la anomalía oceánica seleccionada.")
+                        fig_h_sim, fig_i_sim = plot_escenario_dinamico(df_sim, "Proyectado")
+                        st.plotly_chart(fig_h_sim, use_container_width=True)
+                        st.plotly_chart(fig_i_sim, use_container_width=True)
 
-                # Leyenda Unificada
-                st.markdown("""
-                **📖 Leyenda de Impactos Socio-Ecológicos:**
-                🟢 **Humedad del Suelo:** Agua retenida útil para ecosistemas. | 🔴 **Incendios:** Probabilidad de fuego forestal.
-                🟣 **Calidad del Aire:** Riesgo de inversión térmica y mala dilución. | 🟠 **Déficit de Agua:** Estrés en reservas para demanda antrópica.
-                *(Nota: Las líneas verticales naranjas marcan el mes de Agosto, caracterizado por fuertes vientos alisios).*
-                """)
-
-                # Descargas
-                with st.expander("📊 Ver Tablas de Datos y Exportar"):
-                    tab_base, tab_esc = st.tabs(["Tabla Línea Base", "Tabla Escenario Proyectado"])
-                    with tab_base:
-                        st.dataframe(df_base)
-                    with tab_esc:
-                        st.dataframe(df_sim.style.background_gradient(cmap="Reds", subset=['Riesgo Incendios (0-100)', 'Desabastecimiento (0-100)']))
+                    with st.expander("📊 Ver Tablas de Datos y Exportar"):
+                        tab_base, tab_esc = st.tabs(["Tabla Línea Base", "Tabla Escenario Proyectado"])
+                        with tab_base: st.dataframe(df_base)
+                        with tab_esc: st.dataframe(df_sim.style.background_gradient(cmap="Reds", subset=['Riesgo Incendios (0-100)', 'Desabastecimiento (0-100)', 'Pérdida Recarga (mm)']))
                         
-                    csv_export = df_sim.copy()
-                    csv_export['Fecha'] = csv_export['Fecha'].dt.strftime('%Y-%m')
-                    st.download_button("📥 Descargar Escenario Proyectado (CSV)", csv_export.to_csv(index=False).encode('utf-8'), "Simulacion_ENSO_Comparativa.csv", "text/csv")
-            except Exception as e:
-                st.error(f"Error ejecutando la simulación: {e}. Revisa system_dynamics.py.")
+                        csv_export = df_sim.copy()
+                        csv_export['Fecha'] = csv_export['Fecha'].dt.strftime('%Y-%m')
+                        st.download_button("📥 Descargar Escenario Proyectado (CSV)", csv_export.to_csv(index=False).encode('utf-8'), "Simulacion_Hibrida_ENSO.csv", "text/csv")
+                except Exception as e:
+                    st.error(f"Error ejecutando la simulación: {e}")
+        else:
+            st.error("No se pudo generar la serie base de Prophet para la simulación.")
