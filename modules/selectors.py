@@ -743,18 +743,29 @@ def render_selector_espacial(modo_firma="clasica"):
                     st.session_state['ica_porcinos_calc_met'] = int(fila_p.get('PORCINOS', 0))
                     st.session_state['ica_aves_calc_met'] = int(fila_p.get('AVES', 0))
             
-        # 2. 🔍 HIDROLOGÍA (Se mantiene tu SQL original)
+        # 2. 🔍 HIDROLOGÍA (SQL Resiliente Anti-Mojibake)
         try:
-            q_hidro = text("SELECT * FROM matriz_hidrologica_maestra WHERE \"Jerarquia\" = :nivel AND \"Territorio\" = :zona LIMIT 1")
-            df_hidro = pd.read_sql(q_hidro, engine, params={"nivel": nivel_jerarquico, "zona": nombre_zona})
+            # Reparación rápida para la UI y la búsqueda
+            zona_segura = str(nombre_zona).replace('', 'i').replace('?', 'i')
+            zona_corta = zona_segura.split(" - ")[0].strip()
+            
+            # Tomamos las primeras 6 letras para un ILIKE a prueba de balas (Ej: "Medell%")
+            patron_busqueda = f"{zona_corta[:6]}%" if len(zona_corta) > 6 else f"{zona_corta}%"
+
+            q_hidro = text('SELECT * FROM matriz_hidrologica_maestra WHERE "Jerarquia" = :nivel AND "Territorio" ILIKE :zona LIMIT 1')
+            df_hidro = pd.read_sql(q_hidro, engine, params={"nivel": nivel_jerarquico, "zona": patron_busqueda})
+            
             if not df_hidro.empty:
                 row_h = df_hidro.iloc[0]
+                # Inyectamos en ambas llaves para perfecta compatibilidad con todos los módulos
                 st.session_state['aleph_oferta_m3s'] = float(row_h['Caudal_Medio_m3s'])
+                st.session_state['aleph_q_rio_m3s'] = float(row_h['Caudal_Medio_m3s'])
                 st.session_state['aleph_lluvia_mm'] = float(row_h['Lluvia_mm'])
                 st.session_state['aleph_area_km2'] = float(row_h['Area_km2'])
                 st.session_state['aleph_recarga_mm'] = float(row_h['Recarga_mm'])
                 st.session_state['aleph_altitud_m'] = float(row_h['Altitud_m'])
-        except Exception: pass
+        except Exception as e: 
+            print(f"Error en consulta hidro: {e}")
 
     renderizar_gestor_escenarios(nombre_zona)
 
