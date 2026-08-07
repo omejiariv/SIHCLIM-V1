@@ -6348,17 +6348,30 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
     st.info("💡 **Análisis Comparativo (A/B Testing):** Evalúa el estrés del territorio comparando un escenario histórico neutro frente al pronóstico ENSO u otras simulaciones extremas.")
 
     # ==================================================================
-    # 1. TELEMETRÍA ESTRUCTURAL 
+    # 1. TELEMETRÍA ESTRUCTURAL (Extracción y Validación Limpia)
     # ==================================================================
     pob_total = st.session_state.get('aleph_pob_total', 0)
     area_km2 = st.session_state.get('aleph_area_km2', 0.0)
     altitud_m = st.session_state.get('aleph_altitud_m', 1500.0)
     rurh_m3s = st.session_state.get('aleph_concesiones_m3s', 0.0)
     
-    if area_km2 == 0 and gdf_zona is not None and not gdf_zona.empty:
-        try: area_km2 = gdf_zona.to_crs(epsg=3116).area.sum() / 1e6
-        except: pass
+    # 🛡️ Rescate Espacial de Emergencia (Con inyección de CRS)
+    if area_km2 <= 0 and gdf_zona is not None and not gdf_zona.empty:
+        try:
+            gdf_zona_calc = gdf_zona.copy()
+            # Si la geometría viene 'cruda' de la BD, le forzamos el sistema WGS84
+            if gdf_zona_calc.crs is None:
+                gdf_zona_calc.set_crs("EPSG:4326", inplace=True)
             
+            # Proyectamos a Magna Sirgas (EPSG:3116) y calculamos el área
+            area_km2 = gdf_zona_calc.to_crs(epsg=3116).area.sum() / 1e6
+            
+            # Guardamos en sesión para que otros módulos no tengan que recalcular
+            st.session_state['aleph_area_km2'] = area_km2
+        except Exception as e: 
+            print(f"Error en rescate de área: {e}")
+            
+    # Auditoría de Calidad
     alertas_criticas = []
     if area_km2 <= 0:
         area_km2 = 100.0
@@ -6372,7 +6385,7 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
     
     temp_base = 28.0 - (0.006 * altitud_m)
     st.markdown(f"> **⚙️ Contexto del Simulador:** Territorio: `{nombre_zona}` | Área: `{area_km2:,.1f} km²` | Población: `{pob_total:,.0f} hab` | Altitud Media: `{altitud_m:,.0f} m`")
-
+    
     # ==================================================================
     # 2. PANEL DE CONTROL ESTRUCTURAL
     # ==================================================================
