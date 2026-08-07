@@ -41,7 +41,7 @@ def renderizar_telemetria_aleph():
             st.markdown("👥 **Población:** <span style='color:#e74c3c'>Vacía (Default)</span>", unsafe_allow_html=True)
             
         # Sensor Hidrológico
-       oferta_viva = st.session_state.get('aleph_oferta_m3s', st.session_state.get('aleph_q_rio_m3s', 0.0))
+        oferta_viva = st.session_state.get('aleph_oferta_m3s', st.session_state.get('aleph_q_rio_m3s', 0.0))
         if oferta_viva > 0:
             st.markdown(f"🌧️ **Hidrología:** <span style='color:#3498db'>Enlazada ({oferta_viva:,.3f} m³/s)</span>", unsafe_allow_html=True)
         else:
