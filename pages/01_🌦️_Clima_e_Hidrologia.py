@@ -244,7 +244,7 @@ def main():
             # 🧠 Inyectamos la nueva opción en la lista base
             opciones = ["🗺️ Distribución", "🚨 Monitoreo", "📈 Gráficos", "📊 Estadísticas", "🧠 Peritaje y Consistencia", "📄 Reporte", "🏠 Inicio"]
         elif "Ciencia" in categoria_nav:
-            opciones = ["🔮 Pronóstico Climático", "📉 Tendencias", "⚠️ Anomalías", "🔗 Correlación", "🌊 Extremos", "🧪 Sesgo"]
+            opciones = ["🔮 Pronóstico Climático", "📉 Tendencias", "⚠️ Anomalías", "🔗 Correlación", "🌊 Extremos", "🧪 Sesgo", "🌀 Dinámica de Sistemas"]
         else:
             opciones = ["🌍 Mapas Avanzados (Motor Aleph)", "✨ Mapas Isoyetas HD", "🌿 Cobertura", "🌱 Zonas Vida", "🌡️ Clima Futuro"]
             
