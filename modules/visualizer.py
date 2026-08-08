@@ -6441,7 +6441,7 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
             try:
                 # Usamos los parámetros base de infiltración (K_i = 0.5, K_g = 0.7)
                 df_res_completo = hydrogeo_utils.ejecutar_pronostico_prophet(
-                    df_raw, meses_futuros=60, altitud_media=altitud_m, ki_cobertura_suelo=0.5, ruido=0.1, kg=0.7, kc=0.8
+                    df_raw, 60, altitud_m, 0.5, 0.1, kg=0.7, kc=0.8
                 )
                 if not df_res_completo.empty:
                     # Lo guardamos en el Aleph para que "Aguas Subterráneas" lo encuentre listo
@@ -6519,20 +6519,24 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
                         st.markdown("### 🌿 Escenario A: Línea Base (Proyección Prophet)")
                         st.caption("Tendencia natural esperada basada en historia, asumiendo ONI Neutral.")
                         fig_h_base, fig_i_base = plot_escenario_dinamico(df_base, "Base")
-                        st.plotly_chart(fig_h_base, use_container_width=True)
-                        st.plotly_chart(fig_i_base, use_container_width=True)
+                        # 🚀 FIX: Actualizado a la sintaxis moderna de Streamlit
+                        st.plotly_chart(fig_h_base, width="stretch")
+                        st.plotly_chart(fig_i_base, width="stretch")
                     
                     with col_der:
                         st.markdown(f"### 🌪️ Escenario B: Estrés ENSO Proyectado")
                         st.caption("Respuesta del territorio proyectada bajo la anomalía oceánica seleccionada.")
                         fig_h_sim, fig_i_sim = plot_escenario_dinamico(df_sim, "Proyectado")
-                        st.plotly_chart(fig_h_sim, use_container_width=True)
-                        st.plotly_chart(fig_i_sim, use_container_width=True)
+                        # 🚀 FIX: Actualizado a la sintaxis moderna de Streamlit
+                        st.plotly_chart(fig_h_sim, width="stretch")
+                        st.plotly_chart(fig_i_sim, width="stretch")
 
                     with st.expander("📊 Ver Tablas de Datos y Exportar"):
                         tab_base, tab_esc = st.tabs(["Tabla Línea Base", "Tabla Escenario Proyectado"])
-                        with tab_base: st.dataframe(df_base)
-                        with tab_esc: st.dataframe(df_sim.style.background_gradient(cmap="Reds", subset=['Riesgo Incendios (0-100)', 'Desabastecimiento (0-100)', 'Pérdida Recarga (mm)']))
+                        with tab_base: 
+                            st.dataframe(df_base, width="stretch")
+                        with tab_esc: 
+                            st.dataframe(df_sim.style.background_gradient(cmap="Reds", subset=['Riesgo Incendios (0-100)', 'Desabastecimiento (0-100)', 'Pérdida Recarga (mm)']), width="stretch")
                         
                         csv_export = df_sim.copy()
                         csv_export['Fecha'] = csv_export['Fecha'].dt.strftime('%Y-%m')
