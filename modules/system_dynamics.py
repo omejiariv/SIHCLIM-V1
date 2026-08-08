@@ -103,8 +103,9 @@ def run_enso_system_dynamics_prophet(
             "ONI": float(oni_actual), 
             "Precipitación (mm)": float(precip_simulada_mm),
             "Recarga Acuífero (mm)": float(recarga_simulada_mm),
-            "Pérdida Recarga (mm)": float(max(0, deficit_recarga_mm)), # Lo que se pierde por el ENSO
+            "Pérdida Recarga (mm)": float(max(0, deficit_recarga_mm)), 
             "Temperatura (°C)": float(temp_simulada_c), 
+            "Aporte Hídrico (Hm3)": float(aporte_cuenca_hm3), # 🚀 FIX: Columna inyectada para el Waterfall
             "Reservas (Hm3)": float(stock_embalse_hm3), 
             "Humedad Suelo (%)": float(stock_humedad_suelo),
             "Riesgo Incendios (0-100)": float(indice_incendios),
