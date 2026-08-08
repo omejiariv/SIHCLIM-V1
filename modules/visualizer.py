@@ -6380,6 +6380,14 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
     # Cálculo termodinámico base
     temp_base = 28.0 - (0.006 * altitud_m)
     
+    # 🌳 Rescate de Memoria de Biodiversidad (Satélite Terrestre)
+    ha_bosque = st.session_state.get('satelite_ha_bosque', 0.0)
+    ha_matorrales = st.session_state.get('satelite_ha_matorrales', 0.0)
+    ha_pastos = st.session_state.get('satelite_ha_pastos', 0.0)
+    
+    # La biomasa vegetal total expuesta a desecación térmica
+    biomasa_vegetal_ha = ha_bosque + ha_matorrales + ha_pastos
+    
     st.markdown(f"> **⚙️ Contexto del Simulador:** Territorio: `{nombre_zona}` | Área: `{area_km2:,.1f} km²` | Población: `{pob_total:,.0f} hab` | Elevación Media: `{altitud_m:,.0f} msnm` *(Mín: {altitud_min:,.0f} m | Máx: {altitud_max:,.0f} m)*")
 
     # ==================================================================
@@ -6559,6 +6567,33 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
                         # 🚀 FIX: Actualizado a la sintaxis moderna de Streamlit
                         st.plotly_chart(fig_h_sim, width="stretch")
                         st.plotly_chart(fig_i_sim, width="stretch")
+
+                    # ==================================================================
+                    # 🌲 ANÁLISIS FORENSE DE BIODIVERSIDAD (NEXO SATELITAL)
+                    # ==================================================================
+                    st.markdown("---")
+                    st.markdown("### 🌲 Impacto Físico en Biodiversidad (Cruce Satelital)")
+                    
+                    if biomasa_vegetal_ha > 0:
+                        # 1. Encontrar el mes más crítico en el escenario ENSO proyectado
+                        idx_critico = df_sim['Riesgo Incendios (0-100)'].idxmax()
+                        riesgo_max = df_sim.loc[idx_critico, 'Riesgo Incendios (0-100)']
+                        
+                        # 2. Traducción de la fecha
+                        meses_es = {1:'Enero', 2:'Febrero', 3:'Marzo', 4:'Abril', 5:'Mayo', 6:'Junio', 
+                                    7:'Julio', 8:'Agosto', 9:'Septiembre', 10:'Octubre', 11:'Noviembre', 12:'Diciembre'}
+                        mes_critico = f"{meses_es[int(df_sim.loc[idx_critico, 'Mes_Anio'])]} de {df_sim.loc[idx_critico, 'Fecha'].year}"
+                        
+                        # 3. Cálculo de la Métrica de Vulnerabilidad Tangible
+                        biomasa_vulnerable_ha = biomasa_vegetal_ha * (riesgo_max / 100.0)
+                        
+                        # 4. Renderizado de la Alerta
+                        if riesgo_max > 60:
+                            st.error(f"🔥 **Alerta de Conservación Crítica ({mes_critico}):** El escáner satelital (Dynamic World) ha confirmado la existencia de **{biomasa_vegetal_ha:,.0f} hectáreas** de cobertura vegetal natural (Bosques, Matorrales y Pastos) en este territorio. Bajo el estrés térmico e hídrico del escenario proyectado, el índice de ignición alcanzará el **{riesgo_max:.1f}%**. Esto expone a un riesgo crítico de fuego forestal a **{biomasa_vulnerable_ha:,.0f} hectáreas** de capital biológico.")
+                        else:
+                            st.success(f"🌱 **Estabilidad Biológica ({mes_critico}):** El territorio cuenta con **{biomasa_vegetal_ha:,.0f} hectáreas** de cobertura vegetal natural. El escenario proyectado alcanza un riesgo máximo de ignición del **{riesgo_max:.1f}%**, lo cual mantiene la vulnerabilidad forestal en niveles controlables (**{biomasa_vulnerable_ha:,.0f} hectáreas** bajo exposición moderada).")
+                    else:
+                        st.info("💡 **Nexo Satelital Inactivo:** Para conocer exactamente cuántas hectáreas de bosque y ecosistemas nativos están en riesgo de incendio en este escenario, visita primero el módulo **'🌍 Satélite Terrestre'** en el panel de navegación para que la Inteligencia Artificial cuantifique el terreno, y luego regresa aquí.")
 
                     with st.expander("📊 Ver Tablas de Datos y Exportar"):
                         tab_base, tab_esc = st.tabs(["Tabla Línea Base", "Tabla Escenario Proyectado"])
