@@ -81,13 +81,18 @@ def run_enso_system_dynamics_prophet(
             if stock_embalse_hm3 < umbral_alerta: 
                 indice_desabastecimiento = min(100.0, (umbral_alerta - stock_embalse_hm3) / umbral_alerta * 100)
             
-        indice_incendios = max(0, (40.0 - stock_humedad_suelo)) * 2.5
+        # 🚀 FIX FÍSICO: Incendios más sensibles a caídas de humedad (empieza a alertar < 80%)
+        indice_incendios = max(0, (80.0 - stock_humedad_suelo)) * 2.5
         indice_incendios = indice_incendios * (temp_simulada_c / temp_base) * multiplicador_viento
         indice_incendios = min(100.0, indice_incendios)
         
-        indice_estres_urbano = 100.0 - (precip_simulada_mm / (precip_prophet_mm + 1) * 100.0)
-        if temp_simulada_c > 25: indice_estres_urbano += (temp_simulada_c - 25) * 5
-        indice_estres_urbano = max(0.0, min(100.0, indice_estres_urbano))
+        # 🚀 FIX FÍSICO: Estrés Urbano Relativo (Calidad del aire y ola de calor)
+        # 1. Estrés por falta de lluvia (no hay lavado de la atmósfera)
+        estres_lluvia = max(0, 100.0 - (precip_simulada_mm / (precip_prophet_mm + 0.1) * 100.0))
+        # 2. Estrés térmico (anomalía de temperatura: +1°C sobre lo normal suma 20 puntos de estrés)
+        estres_termico = max(0, (temp_simulada_c - temp_base) * 20.0) 
+        
+        indice_estres_urbano = max(0.0, min(100.0, estres_lluvia + estres_termico))
         
         # Acumulación de Déficit de Recarga (La pérdida real de agua subterránea)
         deficit_recarga_mm = recarga_prophet_mm - recarga_simulada_mm
