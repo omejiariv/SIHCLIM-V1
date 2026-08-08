@@ -6374,8 +6374,13 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
     if alertas_criticas:
         st.warning(f"⚠️ **Telemetría Incompleta:** {' | '.join(alertas_criticas)}")
     
+    altitud_min = st.session_state.get('aleph_altitud_min', altitud_m)
+    altitud_max = st.session_state.get('aleph_altitud_max', altitud_m)
+    
+    # Cálculo termodinámico base
     temp_base = 28.0 - (0.006 * altitud_m)
-    st.markdown(f"> **⚙️ Contexto del Simulador:** Territorio: `{nombre_zona}` | Área: `{area_km2:,.1f} km²` | Población: `{pob_total:,.0f} hab` | Elevación: `{altitud_m:,.0f} msnm`")
+    
+    st.markdown(f"> **⚙️ Contexto del Simulador:** Territorio: `{nombre_zona}` | Área: `{area_km2:,.1f} km²` | Población: `{pob_total:,.0f} hab` | Elevación Media: `{altitud_m:,.0f} msnm` *(Mín: {altitud_min:,.0f} m | Máx: {altitud_max:,.0f} m)*")
 
     # ==================================================================
     # 2. PANEL DE CONTROL ESTRUCTURAL
@@ -6533,10 +6538,14 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
 
                     with st.expander("📊 Ver Tablas de Datos y Exportar"):
                         tab_base, tab_esc = st.tabs(["Tabla Línea Base", "Tabla Escenario Proyectado"])
+                        
+                        # 🚀 FIX: Formato estricto para evitar notaciones raras y forzar decimales del ONI
+                        formato_columnas = {'ONI': '{:.2f}', 'Precipitación (mm)': '{:.1f}', 'Temperatura (°C)': '{:.1f}'}
+                        
                         with tab_base: 
-                            st.dataframe(df_base, width="stretch")
+                            st.dataframe(df_base.style.format(formato_columnas), width="stretch")
                         with tab_esc: 
-                            st.dataframe(df_sim.style.background_gradient(cmap="Reds", subset=['Riesgo Incendios (0-100)', 'Desabastecimiento (0-100)', 'Pérdida Recarga (mm)']), width="stretch")
+                            st.dataframe(df_sim.style.format(formato_columnas).background_gradient(cmap="Reds", subset=['Riesgo Incendios (0-100)', 'Desabastecimiento (0-100)', 'Pérdida Recarga (mm)']), width="stretch")
                         
                         csv_export = df_sim.copy()
                         csv_export['Fecha'] = csv_export['Fecha'].dt.strftime('%Y-%m')
