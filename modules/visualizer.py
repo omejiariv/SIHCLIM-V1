@@ -6610,27 +6610,45 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
                         "Hidroituango": {"vol_util": 2720.0, "demanda_mensual": 150.0} # Demanda ecológica/turbinado mínimo
                     }
                     
+                    # ==================================================================
+                    # 🌊 MÓDULO DE ESTRÉS EN EMBALSES CRÍTICOS (WATERFALL DINÁMICO)
+                    # ==================================================================
+                    st.markdown("---")
+                    st.markdown("### 📉 Estrés Hídrico en Infraestructura Crítica (Embalses)")
+                    st.info("Simula el impacto del déficit acumulado sobre el volumen útil de los principales embalses de la región en tiempo real.")
+                    
+                    # 1. Diccionario de Infraestructura (Volúmenes Útiles y Demandas Reales en Hm3/mes)
+                    embalses_db = {
+                        "La Fe": {"vol_util": 11.6, "demanda_mensual": 4.5},
+                        "Piedras Blancas": {"vol_util": 1.2, "demanda_mensual": 0.8},
+                        "Río Grande II": {"vol_util": 220.0, "demanda_mensual": 18.0},
+                        "Hidroituango": {"vol_util": 2720.0, "demanda_mensual": 150.0}
+                    }
+                    
                     c_emb1, c_emb2 = st.columns([1, 3])
                     
                     with c_emb1:
-                        embalse_sel = st.selectbox("Seleccionar Embalse a Simular:", list(embalses_db.keys()))
+                        # 🚀 FIX: Añadimos una 'key' única para que Streamlit guarde el estado del selectbox
+                        embalse_sel = st.selectbox(
+                            "Seleccionar Embalse a Simular:", 
+                            list(embalses_db.keys()),
+                            key="selectbox_embalse_critico"
+                        )
+                        
+                        # 🚀 FIX: Asignación dinámica basada en la selección activa
                         vol_max = embalses_db[embalse_sel]["vol_util"]
                         demanda_embalse = embalses_db[embalse_sel]["demanda_mensual"]
                         
-                        st.metric("Volumen Útil (Capacidad)", f"{vol_max} Hm³")
-                        st.metric("Demanda/Salida Mensual", f"{demanda_embalse} Hm³")
+                        st.metric("Volumen Útil (Capacidad)", f"{vol_max:,.1f} Hm³")
+                        st.metric("Demanda/Salida Mensual", f"{demanda_embalse:,.1f} Hm³")
                         
                     with c_emb2:
-                        # 2. Cálculo del Déficit Acumulado (Waterfall Logic)
-                        # Asumimos que el embalse empieza lleno. 
-                        # El "aporte" simulado lo sacamos de la escorrentía/recarga de nuestra cuenca escalada al tamaño del embalse.
-                        # Para simplificar, usaremos el 'Aporte Hídrico (Hm3)' ya calculado en el modelo base, 
-                        # pero escalado proporcionalmente a la demanda del embalse para ver el efecto del clima.
-                        
-                        factor_escala = demanda_embalse / max(df_sim['Aporte Hídrico (Hm3)'].mean(), 0.001)
+                        # 2. Cálculo del Déficit Acumulado Dinámico
+                        # Escalamos los aportes de la cuenca en función del tamaño del embalse seleccionado
+                        aporte_cuenca_medio = max(df_sim['Aporte Hídrico (Hm3)'].mean(), 0.001)
+                        factor_escala = demanda_embalse / aporte_cuenca_medio
                         aportes_mensuales = df_sim['Aporte Hídrico (Hm3)'] * factor_escala
                         
-                        # Arrays para el Waterfall
                         fechas_waterfall = df_sim['Fecha'].dt.strftime('%b %Y').tolist()
                         valores_delta = []
                         volumen_actual = vol_max
@@ -6639,10 +6657,9 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
                             aporte = aportes_mensuales.iloc[i]
                             delta = aporte - demanda_embalse
                             
-                            # Si el embalse se llena, bota por el vertedero (el delta efectivo se corta)
+                            # Lógica de rebose (vertedero) y vaciado absoluto (cero)
                             if volumen_actual + delta > vol_max:
                                 delta_efectivo = vol_max - volumen_actual
-                            # Si se vacía, el delta efectivo no puede bajar de 0
                             elif volumen_actual + delta < 0:
                                 delta_efectivo = -volumen_actual
                             else:
@@ -6651,7 +6668,7 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
                             valores_delta.append(delta_efectivo)
                             volumen_actual += delta_efectivo
 
-                        # 3. Construcción del Gráfico Waterfall
+                        # 3. Construcción del Gráfico Waterfall Dinámico
                         fig_waterfall = go.Figure(go.Waterfall(
                             name="Embalse",
                             orientation="v",
@@ -6666,16 +6683,14 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
                         ))
 
                         fig_waterfall.update_layout(
-                            title=f"Evolución del Déficit/Superávit Mensual - {embalse_sel}",
+                            title=f"Evolución del Déficit/Superávit Mensual - {embalse_sel} (Capacidad: {vol_max} Hm³)",
                             waterfallgap=0.3,
-                            height=350,
+                            height=380,
                             margin=dict(l=10, r=10, t=40, b=10),
                             yaxis_title="Variación de Volumen (Hm³)"
                         )
                         
-                        # 🚀 FIX: Actualizado a la sintaxis moderna de Streamlit (Silencia la advertencia)
                         st.plotly_chart(fig_waterfall, width="stretch")
-                        
                         st.caption("🔴 **Barras Rojas:** El embalse pierde volumen (Aportes < Demanda). | 🟢 **Barras Verdes:** El embalse se recupera (Aportes > Demanda).")
                     
                     with st.expander("📊 Ver Tablas de Datos y Exportar"):
