@@ -6595,6 +6595,87 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
                     else:
                         st.info("💡 **Nexo Satelital Inactivo:** Para conocer exactamente cuántas hectáreas de bosque y ecosistemas nativos están en riesgo de incendio en este escenario, visita primero el módulo **'🌍 Satélite Terrestre'** en el panel de navegación para que la Inteligencia Artificial cuantifique el terreno, y luego regresa aquí.")
 
+                    # ==================================================================
+                    # 🌊 MÓDULO DE ESTRÉS EN EMBALSES CRÍTICOS (WATERFALL)
+                    # ==================================================================
+                    st.markdown("---")
+                    st.markdown("### 📉 Estrés Hídrico en Infraestructura Crítica (Embalses)")
+                    st.info("Simula el impacto del déficit acumulado de recarga/escorrentía sobre el volumen útil de los principales embalses de la región.")
+                    
+                    # 1. Diccionario de Infraestructura (Volúmenes Útiles aproximados en Hm3)
+                    embalses_db = {
+                        "La Fe": {"vol_util": 11.6, "demanda_mensual": 4.5},
+                        "Piedras Blancas": {"vol_util": 1.2, "demanda_mensual": 0.3},
+                        "Río Grande II": {"vol_util": 220.0, "demanda_mensual": 12.0},
+                        "Hidroituango": {"vol_util": 2720.0, "demanda_mensual": 150.0} # Demanda ecológica/turbinado mínimo
+                    }
+                    
+                    c_emb1, c_emb2 = st.columns([1, 3])
+                    
+                    with c_emb1:
+                        embalse_sel = st.selectbox("Seleccionar Embalse a Simular:", list(embalses_db.keys()))
+                        vol_max = embalses_db[embalse_sel]["vol_util"]
+                        demanda_embalse = embalses_db[embalse_sel]["demanda_mensual"]
+                        
+                        st.metric("Volumen Útil (Capacidad)", f"{vol_max} Hm³")
+                        st.metric("Demanda/Salida Mensual", f"{demanda_embalse} Hm³")
+                        
+                    with c_emb2:
+                        # 2. Cálculo del Déficit Acumulado (Waterfall Logic)
+                        # Asumimos que el embalse empieza lleno. 
+                        # El "aporte" simulado lo sacamos de la escorrentía/recarga de nuestra cuenca escalada al tamaño del embalse.
+                        # Para simplificar, usaremos el 'Aporte Hídrico (Hm3)' ya calculado en el modelo base, 
+                        # pero escalado proporcionalmente a la demanda del embalse para ver el efecto del clima.
+                        
+                        factor_escala = demanda_embalse / max(df_sim['Aporte Hídrico (Hm3)'].mean(), 0.001)
+                        aportes_mensuales = df_sim['Aporte Hídrico (Hm3)'] * factor_escala
+                        
+                        # Arrays para el Waterfall
+                        fechas_waterfall = df_sim['Fecha'].dt.strftime('%b %Y').tolist()
+                        valores_delta = []
+                        volumen_actual = vol_max
+                        
+                        for i in range(len(df_sim)):
+                            aporte = aportes_mensuales.iloc[i]
+                            delta = aporte - demanda_embalse
+                            
+                            # Si el embalse se llena, bota por el vertedero (el delta efectivo se corta)
+                            if volumen_actual + delta > vol_max:
+                                delta_efectivo = vol_max - volumen_actual
+                            # Si se vacía, el delta efectivo no puede bajar de 0
+                            elif volumen_actual + delta < 0:
+                                delta_efectivo = -volumen_actual
+                            else:
+                                delta_efectivo = delta
+                                
+                            valores_delta.append(delta_efectivo)
+                            volumen_actual += delta_efectivo
+
+                        # 3. Construcción del Gráfico Waterfall
+                        fig_waterfall = go.Figure(go.Waterfall(
+                            name="Embalse",
+                            orientation="v",
+                            measure=["relative"] * len(fechas_waterfall),
+                            x=fechas_waterfall,
+                            textposition="outside",
+                            text=[f"{v:+.1f}" for v in valores_delta],
+                            y=valores_delta,
+                            connector={"line": {"color": "rgb(63, 63, 63)"}},
+                            decreasing={"marker": {"color": "#e74c3c"}}, # Rojo si pierde agua
+                            increasing={"marker": {"color": "#2ecc71"}}, # Verde si gana agua
+                        ))
+
+                        fig_waterfall.update_layout(
+                            title=f"Evolución del Déficit/Superávit Mensual - {embalse_sel}",
+                            waterfallgap=0.3,
+                            height=350,
+                            margin=dict(l=10, r=10, t=40, b=10),
+                            yaxis_title="Variación de Volumen (Hm³)"
+                        )
+                        
+                        st.plotly_chart(fig_waterfall, use_container_width=True)
+                        st.caption("🔴 **Barras Rojas:** El embalse pierde volumen (Aportes < Demanda). | 🟢 **Barras Verdes:** El embalse se recupera (Aportes > Demanda).")
+                    
                     with st.expander("📊 Ver Tablas de Datos y Exportar"):
                         tab_base, tab_esc = st.tabs(["Tabla Línea Base", "Tabla Escenario Proyectado"])
                         
