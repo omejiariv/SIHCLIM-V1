@@ -6461,36 +6461,60 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
         return None
 
     # ==================================================================
-    # 4. FUNCIÓN GENERADORA DE GRÁFICOS (Ahora con Recarga Subterránea)
+    # 3. FUNCIÓN GENERADORA DE GRÁFICOS (Para reusar en 2 columnas)
     # ==================================================================
     def plot_escenario_dinamico(df_data, titulo_corto):
-        # 1. Clima y Recarga
+        # --------------------------------------------------------------
+        # GRÁFICO 1: Balance Hídrico (Con Pérdida de Recarga)
+        # --------------------------------------------------------------
         fig_hidro = make_subplots(specs=[[{"secondary_y": True}]])
-        fig_hidro.add_trace(go.Bar(x=df_data['Fecha'], y=df_data['Precipitación (mm)'], name="Lluvia", marker_color="#3498db", opacity=0.5), secondary_y=False)
-        fig_hidro.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Recarga Acuífero (mm)'], name="Recarga Acuífero", fill='tozeroy', line=dict(color="#2980b9", width=2)), secondary_y=False)
+        
+        # Lluvia (Fondo tenue)
+        fig_hidro.add_trace(go.Bar(x=df_data['Fecha'], y=df_data['Precipitación (mm)'], name="Lluvia", marker_color="#3498db", opacity=0.4), secondary_y=False)
+        
+        # Recarga Real (Área azul)
+        fig_hidro.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Recarga Acuífero (mm)'], name="Recarga Real", fill='tozeroy', line=dict(color="#2980b9", width=2)), secondary_y=False)
+        
+        # 🚨 NUEVO: Pérdida de Recarga (Barras rojas superpuestas)
+        if 'Pérdida Recarga (mm)' in df_data.columns and df_data['Pérdida Recarga (mm)'].sum() > 0:
+            fig_hidro.add_trace(go.Bar(x=df_data['Fecha'], y=df_data['Pérdida Recarga (mm)'], name="Pérdida Recarga", marker_color="#e74c3c", opacity=0.9), secondary_y=False)
+
+        # ONI (Eje Secundario)
         fig_hidro.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['ONI'], name="ONI", line=dict(color="red", width=2, dash="dot")), secondary_y=True)
         
         fig_hidro.update_layout(
-            title=f"Lluvia, Recarga Subterránea y Clima ({titulo_corto})", 
+            title=f"Balance Hídrico Subterráneo y Clima ({titulo_corto})", 
             height=380, hovermode="x unified", margin=dict(l=10, r=10, t=40, b=10), 
             showlegend=True, legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5)
         )
         fig_hidro.update_yaxes(title_text="Lámina de Agua (mm)", secondary_y=False)
-        fig_hidro.update_yaxes(title_text="Anomalía ONI", secondary_y=True, range=[-2.5, 2.5])
+        fig_hidro.update_yaxes(title_text="Anomalía ONI", secondary_y=True) 
         
-        # 2. Cascada de Impactos
-        fig_impact = go.Figure()
-        fig_impact.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Humedad Suelo (%)'], name="Humedad Suelo", line=dict(color="#27ae60", width=2)))
-        fig_impact.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Riesgo Incendios (0-100)'], name="Incendios", line=dict(color="#e74c3c", width=2)))
-        fig_impact.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Estrés Urbano (0-100)'], name="Calidad Aire", line=dict(color="#8e44ad", width=2, dash="dash")))
-        fig_impact.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Desabastecimiento (0-100)'], name="Déficit Reservas", line=dict(color="#f39c12", width=3)))
+        # --------------------------------------------------------------
+        # GRÁFICO 2: Riesgos y Termodinámica (Con Temperatura)
+        # --------------------------------------------------------------
+        # 🚨 NUEVO: Convertimos a Subplots para soportar la Temperatura en Eje Secundario
+        fig_impact = make_subplots(specs=[[{"secondary_y": True}]])
         
+        # Índices de Riesgo (Eje Izquierdo: 0-100)
+        fig_impact.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Humedad Suelo (%)'], name="Humedad Suelo", line=dict(color="#27ae60", width=2)), secondary_y=False)
+        fig_impact.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Riesgo Incendios (0-100)'], name="Incendios", line=dict(color="#e74c3c", width=2)), secondary_y=False)
+        
+        # 🚀 FIX: Cambio de etiqueta de "Calidad Aire" a "Estrés Urbano"
+        fig_impact.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Estrés Urbano (0-100)'], name="Estrés Urbano", line=dict(color="#8e44ad", width=2, dash="dash")), secondary_y=False)
+        fig_impact.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Desabastecimiento (0-100)'], name="Déficit Reservas", line=dict(color="#f39c12", width=3)), secondary_y=False)
+        
+        # 🚨 NUEVO: Temperatura (Eje Derecho: °C)
+        fig_impact.add_trace(go.Scatter(x=df_data['Fecha'], y=df_data['Temperatura (°C)'], name="Temperatura", line=dict(color="#d35400", width=2, dash="dot")), secondary_y=True)
+
         fig_impact.update_layout(
-            title=f"Riesgos Socio-Ecológicos ({titulo_corto})", 
+            title=f"Riesgos Socio-Ecológicos y Termodinámica ({titulo_corto})", 
             height=380, hovermode="x unified", margin=dict(l=10, r=10, t=40, b=10), 
             showlegend=True, legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5)
         )
-        fig_impact.update_yaxes(range=[0, 100])
+        fig_impact.update_yaxes(title_text="Índice de Riesgo (0-100)", range=[0, 100], secondary_y=False)
+        fig_impact.update_yaxes(title_text="Temperatura (°C)", showgrid=False, secondary_y=True)
+        
         return fig_hidro, fig_impact
 
     # ==================================================================
