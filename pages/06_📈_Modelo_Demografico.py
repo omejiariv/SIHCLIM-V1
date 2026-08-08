@@ -41,30 +41,6 @@ encender_gemelo_digital()
 st.title("📈 Modelo Demográfico Integral (Proyección y Dasimetría)")
 st.markdown("Ajuste matemático, simulación animada, mapas espaciales y proyección top-down de estructuras poblacionales (1952-2100).")
 
-# =====================================================================
-# 🕵️‍♂️ ESCÁNER FORENSE DE SUPABASE (Rayos X de Geometrías)
-# =====================================================================
-with st.expander("🕵️‍♂️ ESCÁNER FORENSE DE LA BASE DE DATOS", expanded=True):
-    try:
-        from modules.db_manager import get_engine
-        import pandas as pd
-        
-        with get_engine().connect() as conn:
-            # 🚀 Añadimos (geometry IS NULL) para saber si el polígono existe
-            df_bd = pd.read_sql("SELECT nombre_municipio, depto_nom, (geometry IS NULL) as sin_geometria FROM municipios WHERE depto_nom ILIKE '%%Antioquia%%' OR depto_nom IS NULL", conn)
-            
-        st.write(f"🛑 **Total de polígonos en la BD:** {len(df_bd)} (Antioquia tiene 125)")
-        
-        sospechosos = df_bd[df_bd['nombre_municipio'].str.contains('Carol|Prínc|Princ|Andr|Cuerq', case=False, na=False)]
-        
-        if not sospechosos.empty:
-            st.success("✅ Resultados del Escáner (Revisa la columna 'sin_geometria'):")
-            st.dataframe(sospechosos)
-            
-    except Exception as e:
-        st.error(f"Error conectando a Supabase: {e}")
-# =====================================================================
-
 # --- FUNCION MÁGICA 1: EL ASPIRADOR DE TEXTOS (Match infalible) ---
 def normalizar_texto(texto):
     import pandas as pd
