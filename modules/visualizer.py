@@ -6673,7 +6673,9 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
                             yaxis_title="Variación de Volumen (Hm³)"
                         )
                         
-                        st.plotly_chart(fig_waterfall, use_container_width=True)
+                        # 🚀 FIX: Actualizado a la sintaxis moderna de Streamlit (Silencia la advertencia)
+                        st.plotly_chart(fig_waterfall, width="stretch")
+                        
                         st.caption("🔴 **Barras Rojas:** El embalse pierde volumen (Aportes < Demanda). | 🟢 **Barras Verdes:** El embalse se recupera (Aportes > Demanda).")
                     
                     with st.expander("📊 Ver Tablas de Datos y Exportar"):
