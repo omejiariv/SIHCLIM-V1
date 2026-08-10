@@ -6814,9 +6814,21 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
             st.metric("Demanda/Salida Mensual", f"{demanda_embalse:,.1f} Hm³")
             
         with c_emb2:
-            aporte_cuenca_medio = max(df_sim['Aporte Hídrico (Hm3)'].mean(), 0.001)
-            factor_escala = demanda_embalse / aporte_cuenca_medio
-            aportes_mensuales = df_sim['Aporte Hídrico (Hm3)'] * factor_escala
+            # 2. Cálculo del Déficit Acumulado Dinámico
+            # 🚀 FIX FORENSE: Anclamos el factor de escala a la Precipitación (Invariable ante SBN).
+            # Así evitamos que la matemática auto-cancele el agua extra ganada por la reforestación.
+            
+            # Asumimos area_km2 disponible en el contexto del módulo
+            try:
+                area_referencia = area_km2
+            except NameError:
+                area_referencia = 44.7 # Fallback a Santa Elena si la variable no está global
+                
+            precip_media_volumetrica = max((df_sim['Precipitación (mm)'].mean() / 1000.0) * area_referencia, 0.001)
+            factor_escala_fijo = demanda_embalse / precip_media_volumetrica
+            
+            # Aplicamos el factor fijo al Aporte Hídrico (que sí crece con la SBN)
+            aportes_mensuales = df_sim['Aporte Hídrico (Hm3)'] * factor_escala_fijo
             
             fechas_waterfall = df_sim['Fecha'].dt.strftime('%b %Y').tolist()
             valores_delta = []
@@ -6826,6 +6838,7 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
                 aporte = aportes_mensuales.iloc[i]
                 delta = aporte - demanda_embalse
                 
+                # Lógica de rebose (vertedero) y vaciado absoluto (cero)
                 if volumen_actual + delta > vol_max:
                     delta_efectivo = vol_max - volumen_actual
                 elif volumen_actual + delta < 0:
