@@ -2298,7 +2298,20 @@ def display_climate_forecast_tab(df_enso, **kwargs):
                             if len(df_prophet) < 12:
                                 st.warning(f"⚠️ Datos insuficientes: Solo {len(df_prophet)} meses válidos. Se requieren 12.")
                             else:
-                                m = Prophet(daily_seasonality=False, weekly_seasonality=False, yearly_seasonality=True, changepoint_prior_scale=0.3)
+                                # 🚀 FIX FORENSE: Configuración Avanzada de Prophet para Macro-Ciclos (ENSO)
+                                m = Prophet(
+                                    daily_seasonality=False, 
+                                    weekly_seasonality=False, 
+                                    yearly_seasonality=True, 
+                                    changepoint_prior_scale=0.5,  # Más flexibilidad a cambios bruscos (El Niño súbito)
+                                    seasonality_prior_scale=10.0  # Darle más fuerza a los patrones cíclicos
+                                )
+                                
+                                # Enseñamos a la IA sobre las oscilaciones multi-anuales de El Niño/La Niña
+                                m.add_seasonality(name='ciclo_3_anos', period=365.25 * 3, fourier_order=5)
+                                m.add_seasonality(name='ciclo_5_anos', period=365.25 * 5, fourier_order=5)
+                                m.add_seasonality(name='ciclo_7_anos', period=365.25 * 7, fourier_order=5)
+                                
                                 m.fit(df_prophet)
 
                                 future = m.make_future_dataframe(periods=months_future, freq='MS')
@@ -2306,18 +2319,21 @@ def display_climate_forecast_tab(df_enso, **kwargs):
 
                                 fig_prophet = go.Figure()
 
+                                # Historia Real
                                 fig_prophet.add_trace(go.Scatter(
                                     x=df_prophet['ds'], y=df_prophet['y'],
                                     mode='lines', name='Historia Real',
-                                    line=dict(color='gray', width=1)
+                                    line=dict(color='gray', width=1, dash='solid')
                                 ))
 
+                                # Proyección del Modelo (yhat)
                                 fig_prophet.add_trace(go.Scatter(
                                     x=forecast['ds'], y=forecast['yhat'],
-                                    mode='lines', name='Proyección',
-                                    line=dict(color='#007BFF', width=2)
+                                    mode='lines', name='Modelo/Proyección',
+                                    line=dict(color='#007BFF', width=2.5)
                                 ))
 
+                                # Banda de Incertidumbre
                                 fig_prophet.add_trace(go.Scatter(
                                     x=pd.concat([forecast['ds'], forecast['ds'][::-1]]),
                                     y=pd.concat([forecast['yhat_upper'], forecast['yhat_lower'][::-1]]),
@@ -2327,16 +2343,25 @@ def display_climate_forecast_tab(df_enso, **kwargs):
                                     name='Incertidumbre'
                                 ))
 
+                                # 🚀 FIX VISUAL: Rango dinámico y slider para hacer zoom en la proyección
+                                # Mostrar por defecto los últimos 10 años + la proyección futura
+                                fecha_inicio_zoom = df_prophet['ds'].max() - pd.DateOffset(years=10)
+                                fecha_fin_zoom = forecast['ds'].max()
+
                                 fig_prophet.update_layout(
-                                    title=f"Proyección Estadística: {selected_label}",
+                                    title=f"Proyección Estadística Estocástica: {selected_label}",
                                     xaxis_title="Fecha", yaxis_title="Valor Índice",
                                     hovermode="x unified",
-                                    legend=dict(orientation="h", y=1.1)
+                                    legend=dict(orientation="h", y=1.1),
+                                    xaxis=dict(
+                                        rangeslider=dict(visible=True), # Barra de zoom inferior
+                                        type="date",
+                                        range=[fecha_inicio_zoom, fecha_fin_zoom] # Zoom por defecto
+                                    )
                                 )
 
-                                st.plotly_chart(fig_prophet, use_container_width=True)
-                                st.success(f"✅ Proyección generada hasta {forecast['ds'].max().strftime('%Y-%m')}")
-
+                                st.plotly_chart(fig_prophet, width="stretch")
+                                st.success(f"✅ Proyección generada hasta {forecast['ds'].max().strftime('%Y-%m')}. Se aplicaron tensores de Fourier para macro-ciclos ENSO.")
                         except ImportError:
                             st.error("Librería 'prophet' no instalada en el servidor.")
                         except Exception as e:
