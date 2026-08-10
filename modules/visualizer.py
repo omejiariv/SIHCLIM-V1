@@ -6541,14 +6541,23 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
     # ==================================================================
     def obtener_proyeccion_prophet():
         """Busca en memoria o calcula el pronóstico de Prophet al vuelo usando la topografía y coberturas vivas."""
-        # 1. ¿Ya existe y es de este territorio?
-        if 'aleph_prophet_df' in st.session_state and st.session_state.get('aleph_prophet_zona') == nombre_zona:
+        
+        # 🚀 FIX SBN: Verificamos si el usuario movió el slider de reforestación
+        ha_restaurar_actual = st.session_state.get('sbn_ha_restaurar', 0.0)
+        ha_restaurar_guardado = st.session_state.get('aleph_sbn_ejecutado', 0.0)
+        
+        sbn_modificado = ha_restaurar_actual != ha_restaurar_guardado
+
+        # 1. ¿Ya existe, es de este territorio y NO se ha modificado la SBN?
+        if ('aleph_prophet_df' in st.session_state and 
+            st.session_state.get('aleph_prophet_zona') == nombre_zona and 
+            not sbn_modificado):
             df_existente = st.session_state['aleph_prophet_df']
             df_proy = df_existente[df_existente['tipo'] == 'Proyección'].copy()
             if len(df_proy) >= meses_proyeccion:
                 return df_proy.head(meses_proyeccion)
                 
-        # 2. Si no existe, lo calculamos al vuelo de manera invisible
+        # 2. Si no existe o si la SBN cambió, lo calculamos al vuelo de manera invisible
         from modules import hydrogeo_utils
         if df_monthly_filtered is None or df_monthly_filtered.empty: return None
         
