@@ -11,9 +11,6 @@ from rasterio import features
 from rasterio.io import MemoryFile
 import plotly.express as px
 import plotly.graph_objects as go
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 from shapely.geometry import shape, LineString, MultiLineString, Polygon
 
 import streamlit as st
@@ -38,12 +35,10 @@ try:
 except ImportError:
     from db_manager import get_engine
 
-# Intentamos importar pysheds
-try:
-    from pysheds.grid import Grid
-    PYSHEDS_AVAILABLE = True
-except ImportError:
-    PYSHEDS_AVAILABLE = False
+# 🛡️ LAZY LOADING: Solo detectamos si PySheds existe en el entorno, 
+# pero NO lo importamos a RAM hasta que el usuario ejecute el motor hidrológico.
+import importlib.util
+PYSHEDS_AVAILABLE = importlib.util.find_spec("pysheds") is not None
 
 try:
     from modules import land_cover
@@ -249,12 +244,18 @@ if gdf_zona_seleccionada is not None:
                 if st.session_state.get('ultima_zona_procesada') != nombre_zona or st.session_state.get('gdf_rios') is None:
                     with tempfile.NamedTemporaryFile(suffix='.tif', delete=False) as tmp:
                         try:
+                            # 🚀 LAZY LOADING: Importamos la bestia matemática aquí
+                            from pysheds.grid import Grid
+                            
                             meta_t = meta.copy()
                             meta_t.update(driver='GTiff', dtype='float64', nodata=-9999.0)
                             dem_clean = np.where(np.isnan(arr_elevacion), -9999.0, arr_elevacion)
                             
                             with rasterio.open(tmp.name, 'w', **meta_t) as dst: 
                                 dst.write(dem_clean.astype('float64'), 1)
+                            
+                            # Liberamos el array de limpieza para ahorrar RAM
+                            del dem_clean
                             
                             if PYSHEDS_AVAILABLE:
                                 grid = Grid.from_raster(tmp.name)
@@ -268,6 +269,9 @@ if gdf_zona_seleccionada is not None:
                                 acc = grid.accumulation(fdir, dirmap=dirmap)
                                 
                                 branches = grid.extract_river_network(fdir, acc > 100, dirmap=dirmap)
+                                
+                                # Destruimos los objetos temporales masivos de PySheds
+                                del dem_grid, flooded, resolved
                                 
                                 if branches and len(branches["features"]) > 0:
                                     gdf_streams_raw = gpd.GeoDataFrame.from_features(branches["features"], crs=crs_actual)
@@ -364,6 +368,11 @@ if gdf_zona_seleccionada is not None:
 
                     fig.update_layout(title="Terreno 3D (Curvas Nativas)", autosize=True, height=900, scene=dict(aspectmode='manual', aspectratio=dict(x=1, y=1, z=0.2*exag), camera=dict(eye=dict(x=1.5, y=1.5, z=1.5))), margin=dict(l=0, r=0, b=0, t=40))
                     st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True})
+                    
+                    # 🧹 GARBAGE COLLECTION EXTREMO
+                    del fig
+                    del arr_3d
+                    import gc; gc.collect()
 
             # --- TAB 2: PENDIENTES ---
             with tab2:
@@ -1254,7 +1263,9 @@ with st.expander("⚙️ PANEL DE ADMINISTRADOR: Forja Masiva de Matriz Hidro-Ge
                 
                 if arr_dem is not None and not np.isnan(arr_dem).all():
                     elevs_valid = arr_dem[~np.isnan(arr_dem)].flatten()
-                    if len(elevs_valid) < 10: continue # Ignorar si es muy pequeño
+                    if len(elevs_valid) < 10: 
+                        del arr_dem
+                        continue # Ignorar si es muy pequeño
                     
                     elevs_sorted = np.sort(elevs_valid)[::-1]
                     total_pixels = len(elevs_sorted)
@@ -1289,6 +1300,10 @@ with st.expander("⚙️ PANEL DE ADMINISTRADOR: Forja Masiva de Matriz Hidro-Ge
                         "H_Maxima": float(np.max(elevs_valid)),
                         "H_Media": float(np.mean(elevs_valid))
                     })
+                    
+                    # 🧹 PURGA MASIVA ITERATIVA: Destruimos la matriz de elevación antes de la siguiente cuenca
+                    del arr_dem, elevs_valid, elevs_sorted, x_pct, idx
+                    import gc; gc.collect()
                     
             except Exception as e:
                 # Si una cuenca falla (fuera del DEM, error topológico), la saltamos silenciosamente
