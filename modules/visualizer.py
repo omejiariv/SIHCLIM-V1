@@ -2299,18 +2299,23 @@ def display_climate_forecast_tab(df_enso, **kwargs):
                                 st.warning(f"⚠️ Datos insuficientes: Solo {len(df_prophet)} meses válidos. Se requieren 12.")
                             else:
                                 # 🚀 FIX FORENSE: Configuración Avanzada de Prophet para Macro-Ciclos (ENSO)
+                                else:
+                                # 🚀 FIX FORENSE: Liberando la agresividad matemática de Prophet
                                 m = Prophet(
                                     daily_seasonality=False, 
                                     weekly_seasonality=False, 
                                     yearly_seasonality=True, 
-                                    changepoint_prior_scale=0.5,  # Más flexibilidad a cambios bruscos (El Niño súbito)
-                                    seasonality_prior_scale=10.0  # Darle más fuerza a los patrones cíclicos
+                                    changepoint_prior_scale=0.95, # (0 a 1) Casi al máximo: permite quiebres bruscos y caóticos
+                                    seasonality_prior_scale=30.0  # Fuerza máxima a los patrones cíclicos
                                 )
                                 
-                                # Enseñamos a la IA sobre las oscilaciones multi-anuales de El Niño/La Niña
-                                m.add_seasonality(name='ciclo_3_anos', period=365.25 * 3, fourier_order=5)
-                                m.add_seasonality(name='ciclo_5_anos', period=365.25 * 5, fourier_order=5)
-                                m.add_seasonality(name='ciclo_7_anos', period=365.25 * 7, fourier_order=5)
+                                # Inyectamos un espectro completo de macro-ciclos ENSO (2 a 7 años)
+                                # Aumentamos el 'fourier_order' a 10 para permitir picos afilados y asimétricos
+                                m.add_seasonality(name='ciclo_2_anos', period=365.25 * 2, fourier_order=10)
+                                m.add_seasonality(name='ciclo_3_anos', period=365.25 * 3, fourier_order=10)
+                                m.add_seasonality(name='ciclo_4_anos', period=365.25 * 4, fourier_order=10)
+                                m.add_seasonality(name='ciclo_5_anos', period=365.25 * 5, fourier_order=10)
+                                m.add_seasonality(name='ciclo_7_anos', period=365.25 * 7, fourier_order=10)
                                 
                                 m.fit(df_prophet)
 
