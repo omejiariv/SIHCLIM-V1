@@ -6612,6 +6612,10 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
                     st.session_state['aleph_prophet_df'] = df_res_completo
                     st.session_state['aleph_prophet_zona'] = nombre_zona
                     
+                    # 🚀 FIX SBN: AQUÍ ESTÁ EL CAMBIO FALTANTE
+                    # Guardamos el estado actual de la reforestación como "ejecutado"
+                    st.session_state['aleph_sbn_ejecutado'] = ha_restaurar_actual
+                    
                     df_proy = df_res_completo[df_res_completo['tipo'] == 'Proyección'].copy()
                     return df_proy.head(meses_proyeccion)
             except Exception as e:
