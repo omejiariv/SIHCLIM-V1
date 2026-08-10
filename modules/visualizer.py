@@ -2253,13 +2253,14 @@ def display_climate_forecast_tab(df_enso, **kwargs):
             st.error("Error crítico: Función 'get_iri_enso_forecast' no encontrada en 'modules.climate_api'.")
 
     # -------------------------------------------------------------------------
-    # PESTAÑA 3: PROPHET (GENERADOR AVANZADO)
+    # PESTAÑA 3: XGBOOST (MOTOR AUTOREGRESIVO ML)
     # -------------------------------------------------------------------------
     with tab_gen:
-        st.markdown("#### 🤖 Generador Prophet (Proyección Estadística Local)")
+        st.markdown("#### 🧠 Motor Machine Learning: XGBoost Autoregresivo (ENSO)")
+        st.info("Utiliza árboles de decisión potenciados (Gradient Boosting) y variables rezagadas para capturar el caos y la memoria no lineal de la variabilidad climática.")
         
         if df_enso is None or df_enso.empty:
-            st.warning("⚠️ No hay datos históricos de índices climáticos cargados para entrenar a Prophet.")
+            st.warning("⚠️ No hay datos históricos de índices climáticos cargados.")
         else:
             col_oni = next((c for c in df_enso.columns if 'oni' in c.lower() and 'anomalia' in c.lower()), None) or \
                       next((c for c in df_enso.columns if 'oni' in c.lower()), None)
@@ -2277,101 +2278,132 @@ def display_climate_forecast_tab(df_enso, **kwargs):
             if not opciones_validas:
                 st.error("No se encontraron columnas válidas de índices (ONI, SOI o IOD) en la base de datos.")
             else:
-                c_sel, c_mes = st.columns([2, 1])
+                c_sel, c_mes, c_lags = st.columns([2, 1, 1])
                 with c_sel:
                     selected_label = st.selectbox("Índice a proyectar:", list(opciones_validas.keys()))
                     target_col = opciones_validas[selected_label]
                 with c_mes:
                     months_future = st.slider("Meses a futuro:", 1, 60, 24)
+                with c_lags:
+                    lags_memoria = st.number_input("Memoria (Rezagos en meses):", min_value=12, max_value=60, value=24, help="Cuántos meses hacia atrás mira el modelo para predecir el siguiente. 24 meses es ideal para ENSO.")
 
-                if st.button("Generar Proyección Prophet"):
-                    with st.spinner(f"Entrenando modelo para {selected_label}..."):
+                if st.button("🚀 Generar Proyección XGBoost", type="primary"):
+                    with st.spinner(f"Entrenando red de árboles de decisión para {selected_label}..."):
                         try:
-                            from prophet import Prophet
+                            import xgboost as xgb
+                            import numpy as np
+                            import pandas as pd
+                            import plotly.graph_objects as go
                             
-                            df_prophet = df_enso[[Config.DATE_COL, target_col]].copy()
-                            df_prophet.columns = ['ds', 'y']
+                            # 1. Preparación de la Serie
+                            df_ml = df_enso[[Config.DATE_COL, target_col]].copy()
+                            df_ml.columns = ['Fecha', 'Valor']
+                            df_ml['Valor'] = pd.to_numeric(df_ml['Valor'], errors='coerce')
+                            df_ml = df_ml.dropna().sort_values('Fecha').reset_index(drop=True)
                             
-                            df_prophet['y'] = pd.to_numeric(df_prophet['y'], errors='coerce')
-                            df_prophet = df_prophet.dropna()
-                            
-                            if len(df_prophet) < 12:
-                                st.warning(f"⚠️ Datos insuficientes: Solo {len(df_prophet)} meses válidos. Se requieren 12.")
+                            if len(df_ml) < lags_memoria + 12:
+                                st.error(f"Datos insuficientes. Se necesitan al menos {lags_memoria + 12} meses históricos.")
                             else:
-                                # 🚀 FIX FORENSE: Configuración Avanzada de Prophet para Macro-Ciclos (ENSO)
-                                else:
-                                # 🚀 FIX FORENSE: Liberando la agresividad matemática de Prophet
-                                m = Prophet(
-                                    daily_seasonality=False, 
-                                    weekly_seasonality=False, 
-                                    yearly_seasonality=True, 
-                                    changepoint_prior_scale=0.95, # (0 a 1) Casi al máximo: permite quiebres bruscos y caóticos
-                                    seasonality_prior_scale=30.0  # Fuerza máxima a los patrones cíclicos
+                                # 2. Ingeniería de Características (Feature Engineering via Sliding Window)
+                                def crear_features(serie_valores, lags):
+                                    X, y = [], []
+                                    for i in range(lags, len(serie_valores)):
+                                        X.append(serie_valores[i-lags:i])
+                                        y.append(serie_valores[i])
+                                    return np.array(X), np.array(y)
+                                
+                                valores = df_ml['Valor'].values
+                                X_train, y_train = crear_features(valores, lags_memoria)
+                                
+                                # 3. Entrenamiento del Modelo XGBoost
+                                # Parámetros ajustados para evitar sobreajuste y capturar variabilidad caótica
+                                modelo_xgb = xgb.XGBRegressor(
+                                    n_estimators=150,
+                                    learning_rate=0.05,
+                                    max_depth=5,
+                                    subsample=0.8,
+                                    colsample_bytree=0.8,
+                                    random_state=42
                                 )
+                                modelo_xgb.fit(X_train, y_train)
                                 
-                                # Inyectamos un espectro completo de macro-ciclos ENSO (2 a 7 años)
-                                # Aumentamos el 'fourier_order' a 10 para permitir picos afilados y asimétricos
-                                m.add_seasonality(name='ciclo_2_anos', period=365.25 * 2, fourier_order=10)
-                                m.add_seasonality(name='ciclo_3_anos', period=365.25 * 3, fourier_order=10)
-                                m.add_seasonality(name='ciclo_4_anos', period=365.25 * 4, fourier_order=10)
-                                m.add_seasonality(name='ciclo_5_anos', period=365.25 * 5, fourier_order=10)
-                                m.add_seasonality(name='ciclo_7_anos', period=365.25 * 7, fourier_order=10)
+                                # 4. Proyección Autoregresiva (Paso a paso hacia el futuro)
+                                ventana_actual = list(valores[-lags_memoria:])
+                                predicciones = []
                                 
-                                m.fit(df_prophet)
+                                for _ in range(months_future):
+                                    # Tomar los últimos N meses de la ventana para predecir el mes N+1
+                                    X_pred = np.array([ventana_actual[-lags_memoria:]])
+                                    pred = modelo_xgb.predict(X_pred)[0]
+                                    predicciones.append(pred)
+                                    # Inyectar la predicción como historia para el siguiente paso temporal
+                                    ventana_actual.append(pred) 
+                                
+                                # 5. Construcción del DataFrame de Resultados
+                                # Frecuencia 'MS' asegura el inicio de cada mes
+                                fechas_futuras = pd.date_range(start=df_ml['Fecha'].iloc[-1] + pd.DateOffset(months=1), periods=months_future, freq='MS')
+                                df_proy = pd.DataFrame({'Fecha': fechas_futuras, 'Proyección': predicciones})
+                                
+                                # Cálculo de incertidumbre dinámica (Expansión tipo abanico basada en RMSE histórico)
+                                predicciones_train = modelo_xgb.predict(X_train)
+                                rmse_train = np.sqrt(np.mean((y_train - predicciones_train)**2))
+                                
+                                # La incertidumbre crece matemáticamente con la raíz cuadrada del horizonte de tiempo
+                                umbral_incertidumbre = rmse_train * 1.96 * np.sqrt(np.arange(1, months_future + 1) / 3.0)
+                                df_proy['Límite_Superior'] = df_proy['Proyección'] + umbral_incertidumbre
+                                df_proy['Límite_Inferior'] = df_proy['Proyección'] - umbral_incertidumbre
+                                
+                                # 6. Renderizado Gráfico de Alta Fidelidad
+                                fig_ml = go.Figure()
 
-                                future = m.make_future_dataframe(periods=months_future, freq='MS')
-                                forecast = m.predict(future)
-
-                                fig_prophet = go.Figure()
-
-                                # Historia Real
-                                fig_prophet.add_trace(go.Scatter(
-                                    x=df_prophet['ds'], y=df_prophet['y'],
+                                # Historia Real (Gris)
+                                fig_ml.add_trace(go.Scatter(
+                                    x=df_ml['Fecha'], y=df_ml['Valor'],
                                     mode='lines', name='Historia Real',
-                                    line=dict(color='gray', width=1, dash='solid')
+                                    line=dict(color='gray', width=1.5, dash='solid')
                                 ))
 
-                                # Proyección del Modelo (yhat)
-                                fig_prophet.add_trace(go.Scatter(
-                                    x=forecast['ds'], y=forecast['yhat'],
-                                    mode='lines', name='Modelo/Proyección',
-                                    line=dict(color='#007BFF', width=2.5)
+                                # Proyección XGBoost (Naranja Tecnológico)
+                                fig_ml.add_trace(go.Scatter(
+                                    x=df_proy['Fecha'], y=df_proy['Proyección'],
+                                    mode='lines', name='Proyección XGBoost',
+                                    line=dict(color='#e67e22', width=3) 
                                 ))
 
                                 # Banda de Incertidumbre
-                                fig_prophet.add_trace(go.Scatter(
-                                    x=pd.concat([forecast['ds'], forecast['ds'][::-1]]),
-                                    y=pd.concat([forecast['yhat_upper'], forecast['yhat_lower'][::-1]]),
-                                    fill='toself', fillcolor='rgba(0,123,255,0.2)',
+                                fig_ml.add_trace(go.Scatter(
+                                    x=pd.concat([df_proy['Fecha'], df_proy['Fecha'][::-1]]),
+                                    y=pd.concat([df_proy['Límite_Superior'], df_proy['Límite_Inferior'][::-1]]),
+                                    fill='toself', fillcolor='rgba(230,126,34,0.2)',
                                     line=dict(color='rgba(255,255,255,0)'),
                                     hoverinfo="skip", showlegend=False,
-                                    name='Incertidumbre'
+                                    name='Incertidumbre Dinámica'
                                 ))
 
-                                # 🚀 FIX VISUAL: Rango dinámico y slider para hacer zoom en la proyección
-                                # Mostrar por defecto los últimos 10 años + la proyección futura
-                                fecha_inicio_zoom = df_prophet['ds'].max() - pd.DateOffset(years=10)
-                                fecha_fin_zoom = forecast['ds'].max()
+                                # Zoom Inteligente
+                                fecha_inicio_zoom = df_ml['Fecha'].max() - pd.DateOffset(years=10)
+                                fecha_fin_zoom = df_proy['Fecha'].max()
 
-                                fig_prophet.update_layout(
-                                    title=f"Proyección Estadística Estocástica: {selected_label}",
+                                fig_ml.update_layout(
+                                    title=f"Proyección Autoregresiva XGBoost: {selected_label}",
                                     xaxis_title="Fecha", yaxis_title="Valor Índice",
                                     hovermode="x unified",
                                     legend=dict(orientation="h", y=1.1),
                                     xaxis=dict(
-                                        rangeslider=dict(visible=True), # Barra de zoom inferior
+                                        rangeslider=dict(visible=True),
                                         type="date",
-                                        range=[fecha_inicio_zoom, fecha_fin_zoom] # Zoom por defecto
+                                        range=[fecha_inicio_zoom, fecha_fin_zoom]
                                     )
                                 )
 
-                                st.plotly_chart(fig_prophet, width="stretch")
-                                st.success(f"✅ Proyección generada hasta {forecast['ds'].max().strftime('%Y-%m')}. Se aplicaron tensores de Fourier para macro-ciclos ENSO.")
-                        except ImportError:
-                            st.error("Librería 'prophet' no instalada en el servidor.")
-                        except Exception as e:
-                            st.error(f"Error calculando proyección: {e}")
+                                st.plotly_chart(fig_ml, width="stretch")
+                                st.success(f"✅ Proyección generada hasta {df_proy['Fecha'].max().strftime('%Y-%m')}. El motor XGBoost procesó {lags_memoria} meses de memoria no lineal profunda.")
 
+                        except ImportError:
+                            st.error("🚨 Librería 'xgboost' no instalada en el entorno. Ejecuta: pip install xgboost")
+                        except Exception as e:
+                            st.error(f"Error calculando proyección ML: {e}")
+                            
 def display_trends_and_forecast_tab(**kwargs):
     st.subheader("📉 Tendencias y Pronósticos (Series de Tiempo)")
 
