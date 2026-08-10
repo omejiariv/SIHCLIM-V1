@@ -240,22 +240,22 @@ def cargar_territorio_maestro():
         return pd.DataFrame()
 
 # ---------------------------------------------------------------------
-# 🚀 INICIALIZACIÓN DE DATOS MAESTROS (100% CLOUD + BYPASS SQL)
+# 🚀 INICIALIZACIÓN DE DATOS MAESTROS (LAZY LOADING)
 # ---------------------------------------------------------------------
-df_mpios = cargar_municipios()                                 
-df_concesiones = cargar_concesiones()
-df_vertimientos = cargar_vertimientos()
-df_territorio = cargar_territorio_maestro()
+# No descargamos nada pesado todavía. Declaramos variables vacías o None.
+df_mpios = None
+df_concesiones = None
+df_vertimientos = None
+df_territorio = None
+dict_pecuarios = None
+df_bovinos, df_porcinos, df_aves = None, None, None
 
-# --- LÍNEA DE DIAGNÓSTICO ---
-if not df_concesiones.empty and 'coordenada_x' in df_concesiones.columns:
-    st.sidebar.info(f"📍 Rango X: {df_concesiones['coordenada_x'].min():.1f} a {df_concesiones['coordenada_x'].max():.1f}")
-# ---------------------------------------------
-
-dict_pecuarios = cargar_maestros_pecuarios()
-df_bovinos = dict_pecuarios.get("bovinos", pd.DataFrame())
-df_porcinos = dict_pecuarios.get("porcinos", pd.DataFrame())
-df_aves = dict_pecuarios.get("aves", pd.DataFrame())
+# Solo cargamos las concesiones si realmente lo necesitamos para la telemetría global rápida
+df_concesiones_raw = cargar_concesiones()
+if not df_concesiones_raw.empty:
+    st.session_state['aleph_concesiones_m3s'] = df_concesiones_raw['caudal_lps'].sum() / 1000.0
+    st.session_state['aleph_rurh_puntos'] = len(df_concesiones_raw)
+    st.sidebar.info(f"📍 Módulo RURH Activo: {len(df_concesiones_raw)} concesiones.")
 
 # ==============================================================================
 # 🌍 1. SELECTOR ESPACIAL Y RECEPTOR DE CONTEXTO (SÍNTESIS UNIFICADA)
@@ -440,10 +440,16 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
         minx, miny, maxx, maxy = 0, 0, 2000000, 2000000 
         
     # ---------------------------------------------------------
-    # 1. VERTIMIENTOS
+    # 1. VERTIMIENTOS (Lazy Loading y Optimización)
     # ---------------------------------------------------------
-    if not df_vertimientos.empty:
-        cols_v = [c for c in df_vertimientos.columns if c in ['caudal_vert_lps', 'tipo_vertimiento', 'coordenada_x', 'coordenada_y']]
+    # 🚀 LAZY LOADING: Descargamos si está vacío en memoria
+    if df_vertimientos is None: 
+        df_vertimientos = cargar_vertimientos()
+
+    # Validación doble para evitar errores si la descarga falla
+    if df_vertimientos is not None and not df_vertimientos.empty:
+        # Extraemos solo lo necesario para no ahogar la RAM
+        cols_v = [c for c in df_vertimientos.columns if c in ['caudal_vert_lps', 'tipo_vertimiento', 'coordenada_x', 'coordenada_y', 'municipio_norm', 'car_norm']]
         df_v_light = df_vertimientos[cols_v].copy()
 
         if es_todo_antioquia:
@@ -465,10 +471,14 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
         df_v = pd.DataFrame()
 
     # ---------------------------------------------------------
-    # 2. CONCESIONES (Filtro Universal y Puente Maestro)
+    # 2. CONCESIONES (Lazy Loading, Filtro Universal y Puente Maestro)
     # ---------------------------------------------------------
-    if not df_concesiones.empty:
-        cols_c = [c for c in df_concesiones.columns if c in ['caudal_lps', 'tipo_agua', 'Sector_Sihcli', 'coordenada_x', 'coordenada_y', 'uso_detalle', 'estado', 'Territorio', 'municipio_norm']]
+    # 🚀 LAZY LOADING: Usamos la conexión cruda del inicio si existe, o recargamos
+    if df_concesiones is None: 
+        df_concesiones = df_concesiones_raw if 'df_concesiones_raw' in locals() else cargar_concesiones()
+
+    if df_concesiones is not None and not df_concesiones.empty:
+        cols_c = [c for c in df_concesiones.columns if c in ['caudal_lps', 'tipo_agua', 'Sector_Sihcli', 'coordenada_x', 'coordenada_y', 'uso_detalle', 'estado', 'Territorio', 'municipio_norm', 'car_norm']]
         df_c_light = df_concesiones[cols_c].copy()
         df_c = pd.DataFrame()
 
@@ -492,7 +502,10 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
                 
             # 🚀 PLAN C: El "Puente Maestro" para Regiones, CARs y Departamentos
             elif nivel_sel_interno in ["Regional", "Región", "Jurisdicción Ambiental (CAR)", "Departamental"]:
-                if 'df_territorio' in locals() and not df_territorio.empty:
+                # Lazy loading también para el maestro territorial
+                if df_territorio is None: df_territorio = cargar_territorio_maestro()
+                
+                if df_territorio is not None and not df_territorio.empty:
                     # En tu archivo maestro, las regiones se llaman 'subregion' (Ej: Oriente)
                     col_busqueda = 'subregion' if nivel_sel_interno in ["Regional", "Región"] else 'car' if "CAR" in nivel_sel_interno else 'depto_nom'
                     
@@ -531,11 +544,12 @@ with st.spinner(f"Cruzando datos espacialmente con {nombre_seleccion}..."):
     else:
         df_c = pd.DataFrame()
 
+    # 🧹 GARBAGE COLLECTION FINAL
     if not es_todo_antioquia:
         # Se verifica si estas variables existen antes de borrarlas para evitar NameErrors
         if 'poligono_zona' in locals(): del poligono_zona
         if 'poligono_preparado' in locals(): del poligono_preparado
-    gc.collect()
+    import gc; gc.collect()
     
 # ==============================================================================
 # 🐄 MOTOR MATEMÁTICO PECUARIO (Conectado a la Nube - Censo ICA Maestro)
