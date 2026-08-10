@@ -17,7 +17,7 @@ import streamlit as st
 # =========================================================================
 # 1. CONFIGURACIÓN Y DICCIONARIO BASE (Debe ir primero)
 # =========================================================================
-st.set_page_config(page_title="Metabolismo Complejo", page_icon="🔗", layout="wide")
+st.set_page_config(page_title="Sistemas Hídricos Territoriales", page_icon="🔗", layout="wide")
 
 # --- 📂 IMPORTACIÓN ROBUSTA DE MÓDULOS ---
 try:
@@ -60,7 +60,7 @@ selectors.renderizar_menu_navegacion("Sistemas Hídricos")
 # Encendido automático del Gemelo Digital (Lectura de matrices maestras)
 encender_gemelo_digital()
 
-# Datos paramétricos (Estructura Ampliada)
+# Datos paramétricos (Estructura Ampliada - Representativa)
 sistemas_embalses = {
     "La Fe": {
         "capacidad_util_Mm3": 11.5, 
@@ -182,6 +182,7 @@ datos_nodo = sistemas_embalses[nodo_seleccionado]
 # 📜 Lógica Legal de Captación y Trasvase
 st.sidebar.markdown("---")
 st.sidebar.markdown("#### ⚖️ Marco Legal (Trasvases)")
+st.sidebar.caption("Simulación de abstracción representativa de la red hídrica.")
 
 concesiones_maestras = {
     "La Fe": {
@@ -220,8 +221,8 @@ else:
 # =========================================================================
 st.title(f"🔗 Metabolismo Territorial Complejo: Nodos y Trasvases ({nodo_seleccionado})")
 st.markdown("""
-Modelo de topología de redes para el **Sistema de Abastecimiento de Agua del Valle de Aburrá y Generación Eléctrica**. 
-Evalúa cómo los embalses integran las cuencas propias con los trasvases legales (Cornare/Corantioquia) requeridos para sostener la demanda.
+Modelo de topología de redes para la **Seguridad Hídrica Territorial**. 
+Esta herramienta utiliza una **abstracción representativa** de la red para evaluar tendencias de estrés climático y resiliencia ecológica, simulando cómo los embalses integran las cuencas aportantes con los trasvases legales requeridos para sostener la demanda.
 """)
 
 # 🚀 OPTIMIZACIÓN: Renderizamos el éxito una sola vez, justo debajo del título
@@ -588,7 +589,10 @@ with st.expander(f"🌐 Inteligencia Territorial WRI: {nodo_seleccionado}", expa
     q_trasvases_local = caudal_total_trasvase
     caudal_L_s_final = ((q_natural_local + q_trasvases_local) if (q_natural_local + q_trasvases_local) > 0 else 0.1) * 1000
     
+    # 🚀 FIX: Blindaje contra división por cero
+    caudal_L_s_final = max(caudal_L_s_final, 0.1)
     concentracion_dbo_final = carga_mg_s_final / caudal_L_s_final
+    
     # Divisor 8.0 para que >4mg/L de DBO empiece a desplomar el índice (Realismo en embalses)
     ind_calidad = max(0.0, min(100.0, 100.0 - (concentracion_dbo_final / 8.0 * 100)))
 
@@ -922,8 +926,6 @@ with st.expander("🎯 3. El ROI de la Naturaleza (Costo-Beneficio de la Infraes
         total_energia = (vol_agua_protegida_m3 * datos_nodo.get("factor_energia_kwh_m3", 0.65) * 0.08) if val_turbinado > 0 else 0.0
 
     with c_roi2:
-        # ... (Cálculos de mitigación_pct, total_quimicos, etc. se mantienen) ...
-        
         # 💰 5. MANTENIMIENTO MECÁNICO (ÁLABES)
         lodo_susp_m3 = st.session_state.get('eco_lodo_abrasivo_m3', 0.0)
         costo_alabes = 2.8 # USD/m3 de lodo que viaja por el túnel
@@ -1620,7 +1622,7 @@ with contenedor_sankey.container():
     )])
     
     fig_sankey_circ.update_layout(
-        height=650, margin=dict(l=20, r=20, t=30, b=20), # Aumenté un poco la altura para dar espacio a los nuevos flujos
+        height=650, margin=dict(l=20, r=20, t=30, b=20),
         font=dict(size=12, family="Arial, sans-serif", color="#1f2937"),
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)"
     )
