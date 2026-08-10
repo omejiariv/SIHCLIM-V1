@@ -6738,35 +6738,38 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
         else:
             st.error("No se pudo generar la serie base para la simulación.")
 
-    # ==================================================================
-    # 6. RENDERIZADO INTERACTIVO (FUERA DEL BOTÓN)
-    # ==================================================================
-    # Al estar fuera del botón, los widgets ya no sufren de amnesia
-    if st.session_state.get('enso_simulacion_lista', False):
-        df_base = st.session_state['enso_df_base']
-        df_sim = st.session_state['enso_df_sim']
-        
-        st.success("✅ Matrices sincronizadas. Pronósticos híbridos inyectados con éxito.")
-        st.markdown("---")
-        
-        col_izq, col_der = st.columns(2)
-        with col_izq:
-            st.markdown("### 🌿 Escenario A: Línea Base (Proyección Estadística)")
-            st.caption("Tendencia natural esperada basada en historia, asumiendo ONI Neutral.")
-            fig_h_base, fig_i_base = plot_escenario_dinamico(df_base, "Base")
-            st.plotly_chart(fig_h_base, width="stretch")
-            st.plotly_chart(fig_i_base, width="stretch")
-        
-        with col_der:
-            st.markdown(f"### 🌪️ Escenario B: Estrés ENSO Proyectado")
-            st.caption("Respuesta del territorio proyectada bajo la anomalía oceánica seleccionada.")
-            fig_h_sim, fig_i_sim = plot_escenario_dinamico(df_sim, "Proyectado")
-            st.plotly_chart(fig_h_sim, width="stretch")
-            st.plotly_chart(fig_i_sim, width="stretch")
+        # ==================================================================
+        # 6. RENDERIZADO INTERACTIVO (FUERA DEL BOTÓN)
+        # ==================================================================
+        # Al estar fuera del botón, los widgets ya no sufren de amnesia
+        if st.session_state.get('enso_simulacion_lista', False):
+            df_base = st.session_state['enso_df_base']
+            df_sim = st.session_state['enso_df_sim']
+            
+            st.success("✅ Matrices sincronizadas. Pronósticos híbridos inyectados con éxito.")
+            st.markdown("---")
+            
+            # 🚀 FIX ARQUITECTÓNICO: Expander para agrupar los gráficos de escenarios
+            with st.expander("📊 Ver Detalle Comparativo de Escenarios (Base vs. Proyectado)", expanded=True):
+                col_izq, col_der = st.columns(2)
+                
+                with col_izq:
+                    st.markdown("### 🌿 Escenario A: Línea Base (Proyección Estadística)")
+                    st.caption("Tendencia natural esperada basada en historia, asumiendo ONI Neutral.")
+                    fig_h_base, fig_i_base = plot_escenario_dinamico(df_base, "Base")
+                    st.plotly_chart(fig_h_base, width="stretch")
+                    st.plotly_chart(fig_i_base, width="stretch")
+                
+                with col_der:
+                    st.markdown(f"### 🌪️ Escenario B: Estrés ENSO Proyectado")
+                    st.caption("Respuesta del territorio proyectada bajo la anomalía oceánica seleccionada.")
+                    fig_h_sim, fig_i_sim = plot_escenario_dinamico(df_sim, "Proyectado")
+                    st.plotly_chart(fig_h_sim, width="stretch")
+                    st.plotly_chart(fig_i_sim, width="stretch")
 
-        # ==================================================================
-        # 🌲 ANÁLISIS FORENSE DE BIODIVERSIDAD (NEXO SATELITAL)
-        # ==================================================================
+            # ==================================================================
+            # 🌲 ANÁLISIS FORENSE DE BIODIVERSIDAD (NEXO SATELITAL)
+            # ==================================================================
         st.markdown("---")
         st.markdown("### 🌲 Impacto Físico en Biodiversidad (Cruce Satelital)")
         
