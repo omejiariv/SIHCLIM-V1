@@ -2756,16 +2756,62 @@ def display_trends_and_forecast_tab(**kwargs):
 
     # --- TAB 6: COMPARACIÓN ---
     with tabs[5]:
-        s, p = st.session_state.get("sarima_res"), st.session_state.get("prophet_res")
+        s = st.session_state.get("sarima_res")
+        p = st.session_state.get("prophet_res")
+        
         if s is not None and p is not None:
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=s.index, y=s, name="SARIMA", line=dict(color="red")))
-            fig.add_trace(go.Scatter(x=p.index, y=p, name="Prophet", line=dict(color="green")))
-            fig.update_layout(title="Comparativa de Modelos", hovermode="x unified")
-            # 🚀 FIX STREAMLIT: width="stretch"
+            
+            # 🚀 FIX: 1. Agregamos la Historia Real (ts_clean) al gráfico de comparación
+            fig.add_trace(
+                go.Scatter(
+                    x=ts_clean.index, 
+                    y=ts_clean, 
+                    name="Historia Real", 
+                    line=dict(color="#3498db", width=1.5, dash="solid") # Azul técnico
+                )
+            )
+            
+            # 2. Agregamos SARIMA
+            fig.add_trace(
+                go.Scatter(
+                    x=s.index, 
+                    y=s, 
+                    name="Proyección SARIMA", 
+                    line=dict(color="#e74c3c", width=2.5, dash="dot"), # Rojo agresivo
+                    mode='lines+markers'
+                )
+            )
+            
+            # 3. Agregamos Prophet
+            fig.add_trace(
+                go.Scatter(
+                    x=p.index, 
+                    y=p, 
+                    name="Proyección Prophet", 
+                    line=dict(color="#2ecc71", width=2.5) # Verde suavizado
+                )
+            )
+            
+            # 🚀 FIX: 4. Aplicamos el Zoom Inteligente (Últimos 10 años por defecto)
+            fecha_inicio_zoom = ts_clean.index.max() - pd.DateOffset(years=10)
+            fecha_fin_zoom = max(s.index.max(), p.index.max())
+
+            fig.update_layout(
+                title="Batalla de Algoritmos: Historia vs SARIMA vs Prophet", 
+                hovermode="x unified",
+                xaxis_title="Fecha",
+                yaxis_title="Precipitación (mm)",
+                legend=dict(orientation="h", y=1.1),
+                xaxis=dict(
+                    rangeslider=dict(visible=True),
+                    type="date",
+                    range=[fecha_inicio_zoom, fecha_fin_zoom]
+                )
+            )
             st.plotly_chart(fig, width="stretch")
         else:
-            st.info("Ejecute ambos modelos para comparar (SARIMA y Prophet).")
+            st.info("💡 Ejecute ambos modelos matemáticos (SARIMA y Prophet) en sus respectivas pestañas para habilitar el motor de comparación cruzada.")
 
 def display_anomalies_tab(
     df_long, df_monthly_filtered, stations_for_analysis, **kwargs
