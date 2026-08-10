@@ -979,7 +979,7 @@ if gdf_zona_seleccionada is not None:
                     folium.LayerControl().add_to(m_pour)
                     
                     # 🚀 FIX 2: Bloquea el tráfico de red inútil. Solo avisa al servidor cuando hay un clic efectivo.
-                    mapa_clic = st_folium(m_pour, height=650, width="stretch", key="mapa_pour_point", returned_objects=["last_clicked"])
+                    mapa_clic = st_folium(m_pour, height=650, use_container_width=True, key="mapa_pour_point", returned_objects=["last_clicked"])
                     
                 with c_controles_pour:
                     st.markdown("#### 📍 Controlador Hidrológico")
@@ -1039,7 +1039,7 @@ if gdf_zona_seleccionada is not None:
                                         perim_km = gdf_metric.length.iloc[0] / 1000
                                         
                                         # B. Altitudes (Cruzando la máscara de la cuenca con el DEM)
-                                        elevs = arr_puro[catch_uint8 == 1]
+                                        elevs = arr_elevacion[catch_uint8 == 1]
                                         z_max = float(np.nanmax(elevs))
                                         z_min = float(np.nanmin(elevs))
                                         z_mean = float(np.nanmean(elevs))
