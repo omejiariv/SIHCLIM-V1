@@ -6430,11 +6430,10 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
     # 3. 🧠 ORQUESTADOR DE PROPHET: INYECCIÓN A DEMANDA (LAZY LOADING)
     # ==================================================================
     def obtener_proyeccion_prophet():
-        """Busca en memoria o calcula el pronóstico de Prophet al vuelo."""
+        """Busca en memoria o calcula el pronóstico de Prophet al vuelo usando la topografía y coberturas vivas."""
         # 1. ¿Ya existe y es de este territorio?
         if 'aleph_prophet_df' in st.session_state and st.session_state.get('aleph_prophet_zona') == nombre_zona:
             df_existente = st.session_state['aleph_prophet_df']
-            # Verificamos si tiene suficientes meses para el horizonte pedido
             df_proy = df_existente[df_existente['tipo'] == 'Proyección'].copy()
             if len(df_proy) >= meses_proyeccion:
                 return df_proy.head(meses_proyeccion)
@@ -6443,21 +6442,53 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
         from modules import hydrogeo_utils
         if df_monthly_filtered is None or df_monthly_filtered.empty: return None
         
-        # Acomodamos el DF al formato que Prophet espera (id_estacion, fecha, valor)
         df_raw = df_monthly_filtered.copy()
-        if 'valor' not in df_raw.columns:
-            df_raw['valor'] = df_raw[Config.PRECIPITATION_COL]
-        if 'id_estacion' not in df_raw.columns:
-            df_raw['id_estacion'] = df_raw[Config.STATION_NAME_COL]
+        if 'valor' not in df_raw.columns: df_raw['valor'] = df_raw[Config.PRECIPITATION_COL]
+        if 'id_estacion' not in df_raw.columns: df_raw['id_estacion'] = df_raw[Config.STATION_NAME_COL]
             
-        with st.spinner("🧠 Despertando a Prophet: Entrenando modelo estocástico para la cuenca..."):
+        with st.spinner("🧠 Despertando a Prophet: Entrenando modelo estocástico con la biofísica de la cuenca..."):
             try:
-                # Usamos los parámetros base de infiltración (K_i = 0.5, K_g = 0.7)
+                # -------------------------------------------------------------
+                # 🌍 LECTURA VIVA DEL TERRITORIO (Desquemando Ki y Kg)
+                # -------------------------------------------------------------
+                # Rescatamos el inventario satelital del Aleph (si el usuario ya usó el radar)
+                ha_bosq = st.session_state.get('satelite_ha_bosque', 0.0) + st.session_state.get('satelite_ha_matorrales', 0.0)
+                ha_agro = st.session_state.get('satelite_ha_cultivos', 0.0)
+                ha_past = st.session_state.get('satelite_ha_pastos', 0.0)
+                ha_agua = st.session_state.get('satelite_ha_agua', 0.0)
+                ha_urba = st.session_state.get('satelite_ha_urbano', 0.0) + st.session_state.get('satelite_ha_suelo_desnudo', 0.0)
+                
+                total_ha = ha_bosq + ha_agro + ha_past + ha_agua + ha_urba
+                
+                if total_ha > 0:
+                    # Calculamos los porcentajes reales vivos
+                    p_bosq = (ha_bosq / total_ha)
+                    p_agro = (ha_agro / total_ha)
+                    p_past = (ha_past / total_ha)
+                    p_agua = (ha_agua / total_ha)
+                    p_urba = (ha_urba / total_ha)
+                    
+                    # Ponderación hidrogeológica de coberturas
+                    ki_dinamico = (p_bosq * 0.50) + (p_agro * 0.30) + (p_past * 0.30) + (p_agua * 0.90) + (p_urba * 0.05)
+                    kc_dinamico = (p_bosq * 1.00) + (p_agro * 0.85) + (p_past * 0.80) + (p_agua * 1.05) + (p_urba * 0.40)
+                    
+                    # Aseguramos límites matemáticos
+                    ki_dinamico = max(0.01, min(0.95, ki_dinamico))
+                else:
+                    # Fallback de seguridad si el radar satelital no se ha encendido
+                    ki_dinamico = 0.50
+                    kc_dinamico = 0.80
+                
+                # Rescatamos Geología/Recarga si viene del módulo de Aguas Subterráneas, sino asumimos media (0.7)
+                kg_dinamico = st.session_state.get('aleph_kg_factor', 0.70)
+
+                # -------------------------------------------------------------
+                # 🚀 FIX: Prophet ahora usa el ADN real del territorio
                 df_res_completo = hydrogeo_utils.ejecutar_pronostico_prophet(
-                    df_raw, 60, altitud_m, 0.5, 0.1, kg=0.7, kc=0.8
+                    df_raw, 60, altitud_m, ki_dinamico, 0.1, kg=kg_dinamico, kc=kc_dinamico
                 )
+                
                 if not df_res_completo.empty:
-                    # Lo guardamos en el Aleph para que "Aguas Subterráneas" lo encuentre listo
                     st.session_state['aleph_prophet_df'] = df_res_completo
                     st.session_state['aleph_prophet_zona'] = nombre_zona
                     
@@ -6467,7 +6498,7 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
                 st.error(f"Error entrenando IA Prophet: {e}")
                 return None
         return None
-
+        
     # ==================================================================
     # 3. FUNCIÓN GENERADORA DE GRÁFICOS (Para reusar en 2 columnas)
     # ==================================================================
