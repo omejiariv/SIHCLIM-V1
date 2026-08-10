@@ -6526,11 +6526,10 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
         return fig_hidro, fig_impact
 
     # ==================================================================
-    # 5. EJECUCIÓN 
+    # 5. EJECUCIÓN (Y GUARDADO EN MEMORIA)
     # ==================================================================
     if st.button("🚀 Ejecutar Simulación Comparativa (Prophet + Dinámica)", type="primary"):
         df_proyeccion_base = obtener_proyeccion_prophet()
-        
         if df_proyeccion_base is not None:
             with st.spinner("Procesando realidades paralelas y A/B Testing..."):
                 try:
@@ -6548,165 +6547,147 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
                         poblacion_servida=pob_total, caudal_rurh_m3s=rurh_m3s
                     )
                     
-                    st.success("✅ Matrices sincronizadas. Pronóstico Prophet inyectado con éxito.")
-                    st.markdown("---")
-                    
-                    col_izq, col_der = st.columns(2)
-                    with col_izq:
-                        st.markdown("### 🌿 Escenario A: Línea Base (Proyección Prophet)")
-                        st.caption("Tendencia natural esperada basada en historia, asumiendo ONI Neutral.")
-                        fig_h_base, fig_i_base = plot_escenario_dinamico(df_base, "Base")
-                        # 🚀 FIX: Actualizado a la sintaxis moderna de Streamlit
-                        st.plotly_chart(fig_h_base, width="stretch")
-                        st.plotly_chart(fig_i_base, width="stretch")
-                    
-                    with col_der:
-                        st.markdown(f"### 🌪️ Escenario B: Estrés ENSO Proyectado")
-                        st.caption("Respuesta del territorio proyectada bajo la anomalía oceánica seleccionada.")
-                        fig_h_sim, fig_i_sim = plot_escenario_dinamico(df_sim, "Proyectado")
-                        # 🚀 FIX: Actualizado a la sintaxis moderna de Streamlit
-                        st.plotly_chart(fig_h_sim, width="stretch")
-                        st.plotly_chart(fig_i_sim, width="stretch")
+                    # 🚀 FIX: Inyectamos los resultados en el Aleph y encendemos la bandera de visualización
+                    st.session_state['enso_df_base'] = df_base
+                    st.session_state['enso_df_sim'] = df_sim
+                    st.session_state['enso_simulacion_lista'] = True
+                except Exception as e:
+                    st.error(f"Error ejecutando la simulación: {e}")
+        else:
+            st.error("No se pudo generar la serie base de Prophet para la simulación.")
 
-                    # ==================================================================
-                    # 🌲 ANÁLISIS FORENSE DE BIODIVERSIDAD (NEXO SATELITAL)
-                    # ==================================================================
-                    st.markdown("---")
-                    st.markdown("### 🌲 Impacto Físico en Biodiversidad (Cruce Satelital)")
-                    
-                    if biomasa_vegetal_ha > 0:
-                        # 1. Encontrar el mes más crítico en el escenario ENSO proyectado
-                        idx_critico = df_sim['Riesgo Incendios (0-100)'].idxmax()
-                        riesgo_max = df_sim.loc[idx_critico, 'Riesgo Incendios (0-100)']
-                        
-                        # 2. Traducción de la fecha
-                        meses_es = {1:'Enero', 2:'Febrero', 3:'Marzo', 4:'Abril', 5:'Mayo', 6:'Junio', 
-                                    7:'Julio', 8:'Agosto', 9:'Septiembre', 10:'Octubre', 11:'Noviembre', 12:'Diciembre'}
-                        mes_critico = f"{meses_es[int(df_sim.loc[idx_critico, 'Mes_Anio'])]} de {df_sim.loc[idx_critico, 'Fecha'].year}"
-                        
-                        # 3. Cálculo de la Métrica de Vulnerabilidad Tangible
-                        biomasa_vulnerable_ha = biomasa_vegetal_ha * (riesgo_max / 100.0)
-                        
-                        # 4. Renderizado de la Alerta
-                        if riesgo_max > 60:
-                            st.error(f"🔥 **Alerta de Conservación Crítica ({mes_critico}):** El escáner satelital (Dynamic World) ha confirmado la existencia de **{biomasa_vegetal_ha:,.0f} hectáreas** de cobertura vegetal natural (Bosques, Matorrales y Pastos) en este territorio. Bajo el estrés térmico e hídrico del escenario proyectado, el índice de ignición alcanzará el **{riesgo_max:.1f}%**. Esto expone a un riesgo crítico de fuego forestal a **{biomasa_vulnerable_ha:,.0f} hectáreas** de capital biológico.")
-                        else:
-                            st.success(f"🌱 **Estabilidad Biológica ({mes_critico}):** El territorio cuenta con **{biomasa_vegetal_ha:,.0f} hectáreas** de cobertura vegetal natural. El escenario proyectado alcanza un riesgo máximo de ignición del **{riesgo_max:.1f}%**, lo cual mantiene la vulnerabilidad forestal en niveles controlables (**{biomasa_vulnerable_ha:,.0f} hectáreas** bajo exposición moderada).")
-                    else:
-                        st.info("💡 **Nexo Satelital Inactivo:** Para conocer exactamente cuántas hectáreas de bosque y ecosistemas nativos están en riesgo de incendio en este escenario, visita primero el módulo **'🌍 Satélite Terrestre'** en el panel de navegación para que la Inteligencia Artificial cuantifique el terreno, y luego regresa aquí.")
+    # ==================================================================
+    # 6. RENDERIZADO INTERACTIVO (FUERA DEL BOTÓN)
+    # ==================================================================
+    # Al estar fuera del botón, los widgets ya no sufren de amnesia
+    if st.session_state.get('enso_simulacion_lista', False):
+        df_base = st.session_state['enso_df_base']
+        df_sim = st.session_state['enso_df_sim']
+        
+        st.success("✅ Matrices sincronizadas. Pronóstico Prophet inyectado con éxito.")
+        st.markdown("---")
+        
+        col_izq, col_der = st.columns(2)
+        with col_izq:
+            st.markdown("### 🌿 Escenario A: Línea Base (Proyección Prophet)")
+            st.caption("Tendencia natural esperada basada en historia, asumiendo ONI Neutral.")
+            fig_h_base, fig_i_base = plot_escenario_dinamico(df_base, "Base")
+            st.plotly_chart(fig_h_base, width="stretch")
+            st.plotly_chart(fig_i_base, width="stretch")
+        
+        with col_der:
+            st.markdown(f"### 🌪️ Escenario B: Estrés ENSO Proyectado")
+            st.caption("Respuesta del territorio proyectada bajo la anomalía oceánica seleccionada.")
+            fig_h_sim, fig_i_sim = plot_escenario_dinamico(df_sim, "Proyectado")
+            st.plotly_chart(fig_h_sim, width="stretch")
+            st.plotly_chart(fig_i_sim, width="stretch")
 
-                    # ==================================================================
-                    # 🌊 MÓDULO DE ESTRÉS EN EMBALSES CRÍTICOS (WATERFALL)
-                    # ==================================================================
-                    st.markdown("---")
-                    st.markdown("### 📉 Estrés Hídrico en Infraestructura Crítica (Embalses)")
-                    st.info("Simula el impacto del déficit acumulado de recarga/escorrentía sobre el volumen útil de los principales embalses de la región.")
-                    
-                    # 1. Diccionario de Infraestructura (Volúmenes Útiles aproximados en Hm3)
-                    embalses_db = {
-                        "La Fe": {"vol_util": 11.6, "demanda_mensual": 4.5},
-                        "Piedras Blancas": {"vol_util": 1.2, "demanda_mensual": 0.3},
-                        "Río Grande II": {"vol_util": 220.0, "demanda_mensual": 12.0},
-                        "Hidroituango": {"vol_util": 2720.0, "demanda_mensual": 150.0} # Demanda ecológica/turbinado mínimo
-                    }
-                    
-                    # ==================================================================
-                    # 🌊 MÓDULO DE ESTRÉS EN EMBALSES CRÍTICOS (WATERFALL DINÁMICO)
-                    # ==================================================================
-                    st.markdown("---")
-                    st.markdown("### 📉 Estrés Hídrico en Infraestructura Crítica (Embalses)")
-                    st.info("Simula el impacto del déficit acumulado sobre el volumen útil de los principales embalses de la región en tiempo real.")
-                    
-                    # 1. Diccionario de Infraestructura (Volúmenes Útiles y Demandas Reales en Hm3/mes)
-                    embalses_db = {
-                        "La Fe": {"vol_util": 11.6, "demanda_mensual": 4.5},
-                        "Piedras Blancas": {"vol_util": 1.2, "demanda_mensual": 0.8},
-                        "Río Grande II": {"vol_util": 220.0, "demanda_mensual": 18.0},
-                        "Hidroituango": {"vol_util": 2720.0, "demanda_mensual": 150.0}
-                    }
-                    
-                    c_emb1, c_emb2 = st.columns([1, 3])
-                    
-                    with c_emb1:
-                        # 🚀 FIX: Añadimos una 'key' única para que Streamlit guarde el estado del selectbox
-                        embalse_sel = st.selectbox(
-                            "Seleccionar Embalse a Simular:", 
-                            list(embalses_db.keys()),
-                            key="selectbox_embalse_critico"
-                        )
-                        
-                        # 🚀 FIX: Asignación dinámica basada en la selección activa
-                        vol_max = embalses_db[embalse_sel]["vol_util"]
-                        demanda_embalse = embalses_db[embalse_sel]["demanda_mensual"]
-                        
-                        st.metric("Volumen Útil (Capacidad)", f"{vol_max:,.1f} Hm³")
-                        st.metric("Demanda/Salida Mensual", f"{demanda_embalse:,.1f} Hm³")
-                        
-                    with c_emb2:
-                        # 2. Cálculo del Déficit Acumulado Dinámico
-                        # Escalamos los aportes de la cuenca en función del tamaño del embalse seleccionado
-                        aporte_cuenca_medio = max(df_sim['Aporte Hídrico (Hm3)'].mean(), 0.001)
-                        factor_escala = demanda_embalse / aporte_cuenca_medio
-                        aportes_mensuales = df_sim['Aporte Hídrico (Hm3)'] * factor_escala
-                        
-                        fechas_waterfall = df_sim['Fecha'].dt.strftime('%b %Y').tolist()
-                        valores_delta = []
-                        volumen_actual = vol_max
-                        
-                        for i in range(len(df_sim)):
-                            aporte = aportes_mensuales.iloc[i]
-                            delta = aporte - demanda_embalse
-                            
-                            # Lógica de rebose (vertedero) y vaciado absoluto (cero)
-                            if volumen_actual + delta > vol_max:
-                                delta_efectivo = vol_max - volumen_actual
-                            elif volumen_actual + delta < 0:
-                                delta_efectivo = -volumen_actual
-                            else:
-                                delta_efectivo = delta
-                                
-                            valores_delta.append(delta_efectivo)
-                            volumen_actual += delta_efectivo
+        # ==================================================================
+        # 🌲 ANÁLISIS FORENSE DE BIODIVERSIDAD (NEXO SATELITAL)
+        # ==================================================================
+        st.markdown("---")
+        st.markdown("### 🌲 Impacto Físico en Biodiversidad (Cruce Satelital)")
+        
+        if biomasa_vegetal_ha > 0:
+            idx_critico = df_sim['Riesgo Incendios (0-100)'].idxmax()
+            riesgo_max = df_sim.loc[idx_critico, 'Riesgo Incendios (0-100)']
+            meses_es = {1:'Enero', 2:'Febrero', 3:'Marzo', 4:'Abril', 5:'Mayo', 6:'Junio', 
+                        7:'Julio', 8:'Agosto', 9:'Septiembre', 10:'Octubre', 11:'Noviembre', 12:'Diciembre'}
+            mes_critico = f"{meses_es[int(df_sim.loc[idx_critico, 'Mes_Anio'])]} de {df_sim.loc[idx_critico, 'Fecha'].year}"
+            biomasa_vulnerable_ha = biomasa_vegetal_ha * (riesgo_max / 100.0)
+            
+            if riesgo_max > 60:
+                st.error(f"🔥 **Alerta de Conservación Crítica ({mes_critico}):** El escáner satelital (Dynamic World) ha confirmado la existencia de **{biomasa_vegetal_ha:,.0f} hectáreas** de cobertura vegetal natural (Bosques, Matorrales y Pastos) en este territorio. Bajo el estrés térmico e hídrico del escenario proyectado, el índice de ignición alcanzará el **{riesgo_max:.1f}%**. Esto expone a un riesgo crítico de fuego forestal a **{biomasa_vulnerable_ha:,.0f} hectáreas** de capital biológico.")
+            else:
+                st.success(f"🌱 **Estabilidad Biológica ({mes_critico}):** El territorio cuenta con **{biomasa_vegetal_ha:,.0f} hectáreas** de cobertura vegetal natural. El escenario proyectado alcanza un riesgo máximo de ignición del **{riesgo_max:.1f}%**, lo cual mantiene la vulnerabilidad forestal en niveles controlables (**{biomasa_vulnerable_ha:,.0f} hectáreas** bajo exposición moderada).")
+        else:
+            st.info("💡 **Nexo Satelital Inactivo:** Para conocer exactamente cuántas hectáreas de bosque y ecosistemas nativos están en riesgo de incendio en este escenario, visita primero el módulo **'🌍 Satélite Terrestre'** en el panel de navegación para que la Inteligencia Artificial cuantifique el terreno, y luego regresa aquí.")
 
-                        # 3. Construcción del Gráfico Waterfall Dinámico
-                        fig_waterfall = go.Figure(go.Waterfall(
-                            name="Embalse",
-                            orientation="v",
-                            measure=["relative"] * len(fechas_waterfall),
-                            x=fechas_waterfall,
-                            textposition="outside",
-                            text=[f"{v:+.1f}" for v in valores_delta],
-                            y=valores_delta,
-                            connector={"line": {"color": "rgb(63, 63, 63)"}},
-                            decreasing={"marker": {"color": "#e74c3c"}}, # Rojo si pierde agua
-                            increasing={"marker": {"color": "#2ecc71"}}, # Verde si gana agua
-                        ))
-
-                        fig_waterfall.update_layout(
-                            title=f"Evolución del Déficit/Superávit Mensual - {embalse_sel} (Capacidad: {vol_max} Hm³)",
-                            waterfallgap=0.3,
-                            height=380,
-                            margin=dict(l=10, r=10, t=40, b=10),
-                            yaxis_title="Variación de Volumen (Hm³)"
-                        )
-                        
-                        st.plotly_chart(fig_waterfall, width="stretch")
-                        st.caption("🔴 **Barras Rojas:** El embalse pierde volumen (Aportes < Demanda). | 🟢 **Barras Verdes:** El embalse se recupera (Aportes > Demanda).")
+        # ==================================================================
+        # 🌊 MÓDULO DE ESTRÉS EN EMBALSES CRÍTICOS (WATERFALL DINÁMICO)
+        # ==================================================================
+        st.markdown("---")
+        st.markdown("### 📉 Estrés Hídrico en Infraestructura Crítica (Embalses)")
+        st.info("Simula el impacto del déficit acumulado sobre el volumen útil de los principales embalses de la región en tiempo real.")
+        
+        embalses_db = {
+            "La Fe": {"vol_util": 11.6, "demanda_mensual": 4.5},
+            "Piedras Blancas": {"vol_util": 1.2, "demanda_mensual": 0.8},
+            "Río Grande II": {"vol_util": 220.0, "demanda_mensual": 18.0},
+            "Hidroituango": {"vol_util": 2720.0, "demanda_mensual": 150.0}
+        }
+        
+        c_emb1, c_emb2 = st.columns([1, 3])
+        
+        with c_emb1:
+            embalse_sel = st.selectbox(
+                "Seleccionar Embalse a Simular:", 
+                list(embalses_db.keys()),
+                key="selectbox_embalse_critico"
+            )
+            
+            vol_max = embalses_db[embalse_sel]["vol_util"]
+            demanda_embalse = embalses_db[embalse_sel]["demanda_mensual"]
+            
+            st.metric("Volumen Útil (Capacidad)", f"{vol_max:,.1f} Hm³")
+            st.metric("Demanda/Salida Mensual", f"{demanda_embalse:,.1f} Hm³")
+            
+        with c_emb2:
+            aporte_cuenca_medio = max(df_sim['Aporte Hídrico (Hm3)'].mean(), 0.001)
+            factor_escala = demanda_embalse / aporte_cuenca_medio
+            aportes_mensuales = df_sim['Aporte Hídrico (Hm3)'] * factor_escala
+            
+            fechas_waterfall = df_sim['Fecha'].dt.strftime('%b %Y').tolist()
+            valores_delta = []
+            volumen_actual = vol_max
+            
+            for i in range(len(df_sim)):
+                aporte = aportes_mensuales.iloc[i]
+                delta = aporte - demanda_embalse
+                
+                if volumen_actual + delta > vol_max:
+                    delta_efectivo = vol_max - volumen_actual
+                elif volumen_actual + delta < 0:
+                    delta_efectivo = -volumen_actual
+                else:
+                    delta_efectivo = delta
                     
-                    with st.expander("📊 Ver Tablas de Datos y Exportar"):
-                        tab_base, tab_esc = st.tabs(["Tabla Línea Base", "Tabla Escenario Proyectado"])
-                        
-                        # 🚀 FIX: Formato estricto para evitar notaciones raras y forzar decimales del ONI
-                        formato_columnas = {'ONI': '{:.2f}', 'Precipitación (mm)': '{:.1f}', 'Temperatura (°C)': '{:.1f}'}
-                        
-                        with tab_base: 
-                            st.dataframe(df_base.style.format(formato_columnas), width="stretch")
-                        with tab_esc: 
-                            st.dataframe(df_sim.style.format(formato_columnas).background_gradient(cmap="Reds", subset=['Riesgo Incendios (0-100)', 'Desabastecimiento (0-100)', 'Pérdida Recarga (mm)']), width="stretch")
-                        
-                        csv_export = df_sim.copy()
-                        csv_export['Fecha'] = csv_export['Fecha'].dt.strftime('%Y-%m')
-                        st.download_button("📥 Descargar Escenario Proyectado (CSV)", csv_export.to_csv(index=False).encode('utf-8'), "Simulacion_Hibrida_ENSO.csv", "text/csv")
+                valores_delta.append(delta_efectivo)
+                volumen_actual += delta_efectivo
+
+            import plotly.graph_objects as go
+            fig_waterfall = go.Figure(go.Waterfall(
+                name="Embalse", orientation="v",
+                measure=["relative"] * len(fechas_waterfall),
+                x=fechas_waterfall, textposition="outside",
+                text=[f"{v:+.1f}" for v in valores_delta],
+                y=valores_delta,
+                connector={"line": {"color": "rgb(63, 63, 63)"}},
+                decreasing={"marker": {"color": "#e74c3c"}},
+                increasing={"marker": {"color": "#2ecc71"}},
+            ))
+
+            fig_waterfall.update_layout(
+                title=f"Evolución del Déficit/Superávit Mensual - {embalse_sel} (Capacidad: {vol_max} Hm³)",
+                waterfallgap=0.3, height=380, margin=dict(l=10, r=10, t=40, b=10),
+                yaxis_title="Variación de Volumen (Hm³)"
+            )
+            
+            st.plotly_chart(fig_waterfall, width="stretch")
+            st.caption("🔴 **Barras Rojas:** El embalse pierde volumen (Aportes < Demanda). | 🟢 **Barras Verdes:** El embalse se recupera (Aportes > Demanda).")
+        
+        with st.expander("📊 Ver Tablas de Datos y Exportar"):
+            tab_base, tab_esc = st.tabs(["Tabla Línea Base", "Tabla Escenario Proyectado"])
+            formato_columnas = {'ONI': '{:.2f}', 'Precipitación (mm)': '{:.1f}', 'Temperatura (°C)': '{:.1f}'}
+            
+            with tab_base: 
+                st.dataframe(df_base.style.format(formato_columnas), width="stretch")
+            with tab_esc: 
+                st.dataframe(df_sim.style.format(formato_columnas).background_gradient(cmap="Reds", subset=['Riesgo Incendios (0-100)', 'Desabastecimiento (0-100)', 'Pérdida Recarga (mm)']), width="stretch")
+            
+            csv_export = df_sim.copy()
+            csv_export['Fecha'] = csv_export['Fecha'].dt.strftime('%Y-%m')
+            st.download_button("📥 Descargar Escenario Proyectado (CSV)", csv_export.to_csv(index=False).encode('utf-8'), "Simulacion_Hibrida_ENSO.csv", "text/csv")
                 except Exception as e:
                     st.error(f"Error ejecutando la simulación: {e}")
         else:
