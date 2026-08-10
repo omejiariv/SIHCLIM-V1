@@ -2408,6 +2408,9 @@ def display_climate_forecast_tab(df_enso, **kwargs):
                                     )
                                 )
 
+                                # 🚀 FIX ARQUITECTÓNICO: Guardar la proyección del ONI en el Aleph
+                                if "oni" in selected_label.lower():
+                                    st.session_state['aleph_xgb_oni'] = df_proy[['Fecha', 'Proyección']].set_index('Fecha')
                                 st.plotly_chart(fig_ml, width="stretch")
                                 st.success(f"✅ Proyección generada hasta {df_proy['Fecha'].max().strftime('%Y-%m')}. El motor XGBoost procesó {lags_memoria} meses de memoria no lineal profunda.")
 
@@ -2497,21 +2500,30 @@ def display_trends_and_forecast_tab(**kwargs):
         temp_enso = df_enso.copy()
         
         # --- ARREGLO DE FECHAS CRÍTICO ---
-        # Si la fecha viene como texto (ej: 'ene-70'), la traducimos antes de convertir
         if temp_enso[Config.DATE_COL].dtype == 'object':
              temp_enso[Config.DATE_COL] = temp_enso[Config.DATE_COL].apply(parse_spanish_date_visualizer)
         
-        # Convertir a datetime final (ahora sí funcionará porque ya está en inglés o formato correcto)
         temp_enso[Config.DATE_COL] = pd.to_datetime(temp_enso[Config.DATE_COL], errors='coerce')
         temp_enso = temp_enso.dropna(subset=[Config.DATE_COL])
-        # ---------------------------------
-
+        
         regressors_df = (
             temp_enso.set_index(Config.DATE_COL)[avail_regs]
             .resample("MS")
             .mean()
             .interpolate()
         )
+
+        # 🚀 FIX DE ASIMILACIÓN: Inyectar el pronóstico de XGBoost al futuro de los regresores
+        if 'aleph_xgb_oni' in st.session_state:
+            xgb_oni = st.session_state['aleph_xgb_oni']
+            col_oni = next((c for c in avail_regs if 'oni' in c.lower()), None)
+            
+            if col_oni and not xgb_oni.empty:
+                # Agregamos las fechas futuras proyectadas al dataframe maestro de regresores
+                for future_date, row in xgb_oni.iterrows():
+                    if future_date not in regressors_df.index:
+                        regressors_df.loc[future_date, col_oni] = row['Proyección']
+        
     # 2. PESTAÑAS (Mapa de Riesgo MOVIDO a Clima Futuro)
     tabs = st.tabs(
         [
@@ -2647,17 +2659,20 @@ def display_trends_and_forecast_tab(**kwargs):
             "Usar Regresor Externo (ONI/SOI/IOD):", avail_regs, key="sarima_regs_sel"
         )
 
+        horizon = st.slider("Horizonte (Meses):", 12, 48, 12, key="h_sarima")
+
         final_reg_df = None
         if sel_regs and regressors_df is not None:
-            # 🚀 FIX PANDAS: Uso de ffill() y bfill() directos para evitar colapsos
+            # 🚀 FIX PANDAS: Crear un índice temporal que sume la historia y el horizonte futuro
+            future_idx = pd.date_range(start=ts_clean.index.max() + pd.DateOffset(months=1), periods=horizon, freq="MS")
+            full_idx = ts_clean.index.union(future_idx)
+            
             final_reg_df = (
                 regressors_df[sel_regs]
-                .reindex(ts_clean.index)
-                .ffill()
+                .reindex(full_idx)
+                .ffill() # Absorbe la curva de XGBoost para el ONI
                 .bfill()
             )
-
-        horizon = st.slider("Horizonte (Meses):", 12, 48, 12, key="h_sarima")
 
         if st.button("Calcular SARIMA"):
             from modules.forecasting import generate_sarima_forecast
@@ -2690,34 +2705,29 @@ def display_trends_and_forecast_tab(**kwargs):
                                 name="Confianza 95%",
                             )
                         )
-                    # 🚀 FIX STREAMLIT: width="stretch"
                     st.plotly_chart(fig, width="stretch")
                     st.session_state["sarima_res"] = fc
                 except Exception as e:
                     st.error(f"Error SARIMA: {e}")
 
-    # --- TAB 5: PROPHET (Legado) ---
+    # --- TAB 5: PROPHET ---
     with tabs[4]:
         st.markdown("#### Pronóstico Prophet")
         sel_regs_p = st.multiselect(
             "Usar Regresor Externo (ONI/SOI/IOD):", avail_regs, key="prophet_regs_sel"
         )
 
-        final_reg_p = None
         horizon_p = st.slider("Horizonte (Meses):", 12, 48, 12, key="h_prophet")
-
+        
+        final_reg_p = None
         if sel_regs_p and regressors_df is not None:
             try:
-                last_date = ts_clean.index.max()
-                future_dates = pd.date_range(
-                    start=regressors_df.index.min(),
-                    periods=len(regressors_df) + horizon_p + 12,
-                    freq="MS",
-                )
-                # 🚀 FIX PANDAS: Uso de ffill() y bfill()
+                future_idx_p = pd.date_range(start=ts_clean.index.max() + pd.DateOffset(months=1), periods=horizon_p, freq="MS")
+                full_idx_p = ts_clean.index.union(future_idx_p)
+                
                 extended_regs = (
                     regressors_df[sel_regs_p]
-                    .reindex(future_dates)
+                    .reindex(full_idx_p)
                     .ffill()
                     .bfill()
                 )
@@ -2760,7 +2770,6 @@ def display_trends_and_forecast_tab(**kwargs):
                             name="Confianza",
                         )
                     )
-                    # 🚀 FIX STREAMLIT: width="stretch"
                     st.plotly_chart(fig, width="stretch")
                     st.session_state["prophet_res"] = fc[["ds", "yhat"]].set_index("ds")["yhat"]
                 except Exception as e:
