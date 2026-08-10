@@ -31,25 +31,14 @@ from modules.db_manager import get_engine
 from modules.data_processor import complete_series, load_and_process_all_data
 from modules.dem_extractor import completar_altitudes_con_dem
 
-# 4. IMPORTACIÓN Y BLINDAJE DE MÓDULOS AVANZADOS
+# 4. BLINDAJE DE MÓDULOS (Lazy Loading)
+# Solo verificamos disponibilidad, NO importamos las bestias matemáticas aún.
 try:
-    from modules import hydro_physics as physics
-    from modules.admin_utils import download_raster_to_temp
-    from modules.utils import cargar_capa_espacial_cache
-    
-    # Intentamos importar la función de análisis
-    try:
-        from modules.analysis import calculate_trends_mann_kendall
-    except ImportError:
-        # SI FALLA: Definimos un "wrapper" de emergencia usando la librería mk
-        import pymannkendall as mk
-        def calculate_trends_mann_kendall(serie):
-            return mk.original_test(serie)
-            
+    import rasterio # Prueba de fuego
     PHYSICS_AVAILABLE = True
 except ImportError as e:
     PHYSICS_AVAILABLE = False
-    st.toast(f"⚠️ Módulos avanzados limitados: {e}", icon="⚠️")
+    st.toast(f"⚠️ Módulos espaciales limitados: {e}", icon="⚠️")
 
 # 5. MENÚ DE NAVEGACIÓN
 selectors.renderizar_menu_navegacion("Clima e Hidrología")
@@ -738,18 +727,22 @@ def main():
             nombre_zona=nombre_zona
         )
     
-# --- MÓDULO: MAPAS AVANZADOS (VERSIÓN DEFINITIVA CORREGIDA) ---
+    # --- MÓDULO: MAPAS AVANZADOS (VERSIÓN DEFINITIVA CORREGIDA) ---
     elif selected_module == "🌍 Mapas Avanzados":
+        
+        # 🚀 LAZY LOADING: Importamos las librerías pesadas SOLO si el usuario entra aquí
+        import io
+        import os
+        import numpy as np
+        import rasterio
+        from rasterio.warp import reproject, Resampling, calculate_default_transform
+        from rasterio.io import MemoryFile
+        from modules import hydro_physics as physics
+        from modules.utils import cargar_capa_espacial_cache
         
         # --- A. FUNCIONES AUXILIARES LOCALES ---
         def local_warper_force_4326(tif_path, bounds_wgs84, shape_out):
             """Reproyección forzada a WGS84 (Compatible con Nube y Local)."""
-            import rasterio
-            from rasterio.warp import reproject, Resampling, calculate_default_transform
-            from rasterio.io import MemoryFile
-            import os
-            import io
-            import numpy as np
             
             # Parche para Windows/PROJ
             if os.name == 'nt':
@@ -757,6 +750,49 @@ def main():
                     import pyproj
                     os.environ['PROJ_LIB'] = pyproj.datadir.get_data_dir()
                 except: pass
+
+            try:
+                # --- LÓGICA CENTRAL (Para evitar errores de indentación al repetir) ---
+                def _core_process(src):
+                    transform, width, height = calculate_default_transform(
+                        src.crs, 'EPSG:4326', src.width, src.height, *src.bounds
+                    )
+                    minx, miny, maxx, maxy = bounds_wgs84
+                    dst_transform = rasterio.transform.from_bounds(minx, miny, maxx, maxy, shape_out[0], shape_out[1])
+                    destination = np.zeros(shape_out, dtype=np.float32)
+                    
+                    reproject(
+                        source=rasterio.band(src, 1), 
+                        destination=destination,
+                        src_transform=src.transform, 
+                        src_crs=src.crs,
+                        dst_transform=dst_transform, 
+                        dst_crs='EPSG:4326',
+                        resampling=Resampling.bilinear,
+                        dst_nodata=np.nan
+                    )
+                    return destination
+
+                # --- APERTURA SEGÚN TIPO DE ARCHIVO ---
+                
+                # CASO 1: Archivo en Memoria (BytesIO desde Supabase)
+                if isinstance(tif_path, (io.BytesIO, bytes)) or hasattr(tif_path, 'read'):
+                    
+                    # 🛡️ BLINDAJE BytesIO: Rebobinar el puntero al inicio (EOF Fix)
+                    if hasattr(tif_path, 'seek'):
+                        tif_path.seek(0)
+                        
+                    with MemoryFile(tif_path) as memfile:
+                        with memfile.open() as src:
+                            return _core_process(src)
+                
+                # CASO 2: Ruta de archivo normal (String)
+                else:
+                    with rasterio.open(tif_path) as src:
+                        return _core_process(src)
+
+            except Exception:
+                return None
 
             try:
                 # --- LÓGICA CENTRAL (Para evitar errores de indentación al repetir) ---
@@ -1182,6 +1218,11 @@ def main():
                             st.session_state['aleph_q_max_m3s'] = float(Q_maximo) # Caudal Máximo Pico
                             
                             st.success("🧠 **¡Conexión Exitosa!** Caudales y recarga inyectados en vivo al Gemelo Digital. Las páginas de 'Toma de Decisiones' y 'Sistemas Hídricos' ahora usarán la física de esta cuenca.")
+                            
+                            # 🧹 GARBAGE COLLECTION: Liberamos la memoria RAM de los pesados arrays raster
+                            del matrices_finales
+                            if 'dem_array' in locals(): del dem_array
+                            import gc; gc.collect()
                             
                         except Exception as e:
                             st.warning(f"Cálculos parciales: {e}")
