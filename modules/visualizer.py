@@ -6668,10 +6668,6 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
         return fig_hidro, fig_impact
 
     # ==================================================================
-    # 5. EJECUCIÓN (Y GUARDADO EN MEMORIA)
-    # ==================================================================
-
-    # ==================================================================
     # 🌿 PANEL DE SOLUCIONES BASADAS EN LA NATURALEZA (SBN)
     # ==================================================================
     st.markdown("---")
@@ -6698,7 +6694,10 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
     # Guardamos el valor en el Aleph para que el orquestador lo recoja
     st.session_state['sbn_ha_restaurar'] = ha_restaurar
     
-    if st.button("🚀 Ejecutar Simulación Comparativa (Prophet + Dinámica)", type="primary"):
+    # ==================================================================
+    # 5. EJECUCIÓN (Y GUARDADO EN MEMORIA)
+    # ==================================================================
+    if st.button("🚀 Ejecutar Simulación Comparativa (Modelos Híbridos + Dinámica)", type="primary"):
         df_proyeccion_base = obtener_proyeccion_prophet()
         if df_proyeccion_base is not None:
             with st.spinner("Procesando realidades paralelas y A/B Testing..."):
@@ -6717,14 +6716,14 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
                         poblacion_servida=pob_total, caudal_rurh_m3s=rurh_m3s
                     )
                     
-                    # 🚀 FIX: Inyectamos los resultados en el Aleph y encendemos la bandera de visualización
+                    # Inyectamos los resultados en el Aleph y encendemos la bandera de visualización
                     st.session_state['enso_df_base'] = df_base
                     st.session_state['enso_df_sim'] = df_sim
                     st.session_state['enso_simulacion_lista'] = True
                 except Exception as e:
                     st.error(f"Error ejecutando la simulación: {e}")
         else:
-            st.error("No se pudo generar la serie base de Prophet para la simulación.")
+            st.error("No se pudo generar la serie base para la simulación.")
 
     # ==================================================================
     # 6. RENDERIZADO INTERACTIVO (FUERA DEL BOTÓN)
@@ -6734,12 +6733,12 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
         df_base = st.session_state['enso_df_base']
         df_sim = st.session_state['enso_df_sim']
         
-        st.success("✅ Matrices sincronizadas. Pronóstico Prophet inyectado con éxito.")
+        st.success("✅ Matrices sincronizadas. Pronósticos híbridos inyectados con éxito.")
         st.markdown("---")
         
         col_izq, col_der = st.columns(2)
         with col_izq:
-            st.markdown("### 🌿 Escenario A: Línea Base (Proyección Prophet)")
+            st.markdown("### 🌿 Escenario A: Línea Base (Proyección Estadística)")
             st.caption("Tendencia natural esperada basada en historia, asumiendo ONI Neutral.")
             fig_h_base, fig_i_base = plot_escenario_dinamico(df_base, "Base")
             st.plotly_chart(fig_h_base, width="stretch")
@@ -6772,7 +6771,6 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
                 st.success(f"🌱 **Estabilidad Biológica ({mes_critico}):** El territorio cuenta con **{biomasa_vegetal_ha:,.0f} hectáreas** de cobertura vegetal natural. El escenario proyectado alcanza un riesgo máximo de ignición del **{riesgo_max:.1f}%**, lo cual mantiene la vulnerabilidad forestal en niveles controlables (**{biomasa_vulnerable_ha:,.0f} hectáreas** bajo exposición moderada).")
         else:
             st.info("💡 **Nexo Satelital Inactivo:** Para conocer exactamente cuántas hectáreas de bosque y ecosistemas nativos están en riesgo de incendio en este escenario, visita primero el módulo **'🌍 Satélite Terrestre'** en el panel de navegación para que la Inteligencia Artificial cuantifique el terreno, y luego regresa aquí.")
-
         # ==================================================================
         # 🌊 MÓDULO DE ESTRÉS EN EMBALSES CRÍTICOS (WATERFALL DINÁMICO)
         # ==================================================================
