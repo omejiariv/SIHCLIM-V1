@@ -6559,37 +6559,38 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
         with st.spinner("🧠 Despertando a Prophet: Entrenando modelo estocástico con la biofísica de la cuenca..."):
             try:
                 # -------------------------------------------------------------
-                # 🌍 LECTURA VIVA DEL TERRITORIO (Desquemando Ki y Kg)
+                # 🌍 LECTURA VIVA DEL TERRITORIO Y SIMULACIÓN SBN
                 # -------------------------------------------------------------
-                # Rescatamos el inventario satelital del Aleph (si el usuario ya usó el radar)
                 ha_bosq = st.session_state.get('satelite_ha_bosque', 0.0) + st.session_state.get('satelite_ha_matorrales', 0.0)
                 ha_agro = st.session_state.get('satelite_ha_cultivos', 0.0)
                 ha_past = st.session_state.get('satelite_ha_pastos', 0.0)
                 ha_agua = st.session_state.get('satelite_ha_agua', 0.0)
                 ha_urba = st.session_state.get('satelite_ha_urbano', 0.0) + st.session_state.get('satelite_ha_suelo_desnudo', 0.0)
                 
+                # 🚀 FIX SBN: Transferencia de masa terrestre (Reforestación)
+                # Extraemos el valor del slider (si existe) y recalculamos las áreas
+                ha_restaurar = st.session_state.get('sbn_ha_restaurar', 0.0)
+                if ha_restaurar > 0 and ha_past >= ha_restaurar:
+                    ha_bosq += ha_restaurar  # Gana cobertura vegetal
+                    ha_past -= ha_restaurar  # Pierde pasturas
+                
                 total_ha = ha_bosq + ha_agro + ha_past + ha_agua + ha_urba
                 
                 if total_ha > 0:
-                    # Calculamos los porcentajes reales vivos
                     p_bosq = (ha_bosq / total_ha)
                     p_agro = (ha_agro / total_ha)
                     p_past = (ha_past / total_ha)
                     p_agua = (ha_agua / total_ha)
                     p_urba = (ha_urba / total_ha)
                     
-                    # Ponderación hidrogeológica de coberturas
                     ki_dinamico = (p_bosq * 0.50) + (p_agro * 0.30) + (p_past * 0.30) + (p_agua * 0.90) + (p_urba * 0.05)
                     kc_dinamico = (p_bosq * 1.00) + (p_agro * 0.85) + (p_past * 0.80) + (p_agua * 1.05) + (p_urba * 0.40)
                     
-                    # Aseguramos límites matemáticos
                     ki_dinamico = max(0.01, min(0.95, ki_dinamico))
                 else:
-                    # Fallback de seguridad si el radar satelital no se ha encendido
                     ki_dinamico = 0.50
                     kc_dinamico = 0.80
                 
-                # Rescatamos Geología/Recarga si viene del módulo de Aguas Subterráneas, sino asumimos media (0.7)
                 kg_dinamico = st.session_state.get('aleph_kg_factor', 0.70)
 
                 # -------------------------------------------------------------
@@ -6669,6 +6670,34 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
     # ==================================================================
     # 5. EJECUCIÓN (Y GUARDADO EN MEMORIA)
     # ==================================================================
+
+    # ==================================================================
+    # 🌿 PANEL DE SOLUCIONES BASADAS EN LA NATURALEZA (SBN)
+    # ==================================================================
+    st.markdown("---")
+    st.markdown("### 🌳 Intervención Territorial: Soluciones Basadas en la Naturaleza")
+    st.info("Simula el impacto hidrológico de la restauración ecológica en la cuenca aportante para mitigar los efectos de El Niño.")
+    
+    ha_pastos_disp = st.session_state.get('satelite_ha_pastos', 0.0)
+    
+    with st.expander("⚙️ Configurar Escenario de Reforestación", expanded=False):
+        if ha_pastos_disp > 0:
+            st.write(f"**Área disponible para restauración (Pastos detectados):** {ha_pastos_disp:,.1f} ha")
+            ha_restaurar = st.slider(
+                "Hectáreas a convertir de Pastos a Bosque Nativo:",
+                min_value=0.0,
+                max_value=float(ha_pastos_disp),
+                value=0.0,
+                step=10.0,
+                help="Al aumentar este valor, se mejora la capacidad de retención e infiltración del suelo en la simulación B (Proyectado)."
+            )
+        else:
+            st.warning("⚠️ No se han detectado áreas de pastos en el escáner satelital previo, o el radar no ha sido ejecutado. La intervención está deshabilitada.")
+            ha_restaurar = 0.0
+            
+    # Guardamos el valor en el Aleph para que el orquestador lo recoja
+    st.session_state['sbn_ha_restaurar'] = ha_restaurar
+    
     if st.button("🚀 Ejecutar Simulación Comparativa (Prophet + Dinámica)", type="primary"):
         df_proyeccion_base = obtener_proyeccion_prophet()
         if df_proyeccion_base is not None:
