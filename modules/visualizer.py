@@ -6688,7 +6688,3 @@ def display_enso_system_dynamics_tab(df_monthly_filtered, nombre_zona, gdf_zona=
             csv_export = df_sim.copy()
             csv_export['Fecha'] = csv_export['Fecha'].dt.strftime('%Y-%m')
             st.download_button("📥 Descargar Escenario Proyectado (CSV)", csv_export.to_csv(index=False).encode('utf-8'), "Simulacion_Hibrida_ENSO.csv", "text/csv")
-                except Exception as e:
-                    st.error(f"Error ejecutando la simulación: {e}")
-        else:
-            st.error("No se pudo generar la serie base de Prophet para la simulación.")
