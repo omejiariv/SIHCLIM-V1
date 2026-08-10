@@ -1774,36 +1774,6 @@ def motor_espacial_v3(escala, q_geo_str, territorios_objetivo_tuple):
 
     return gdf_filtrado
 
-    # =====================================================================
-    # 🕵️‍♂️ SONDA RASTREADORA DE POLÍGONOS PERDIDOS
-    # =====================================================================
-    try:
-        from modules.db_manager import get_engine
-        import pandas as pd
-        with get_engine().connect() as conn:
-            # Traemos todo lo que huela a Antioquia o que no tenga departamento
-            df_bd = pd.read_sql("SELECT nombre_municipio, depto_nom FROM municipios WHERE depto_nom ILIKE '%%Antioquia%%' OR depto_nom IS NULL", conn)
-            
-            # Buscamos cualquier fragmento de palabra, sin importar mayúsculas o tildes
-            carolina_bd = df_bd[df_bd['nombre_municipio'].str.contains('Carol|Prínc|Princ', case=False, na=False)]
-            sanandres_bd = df_bd[df_bd['nombre_municipio'].str.contains('Andr|Cuerq', case=False, na=False)]
-            
-            st.error("🕵️‍♂️ **RESULTADOS DE LA BÚSQUEDA FORENSE EN SUPABASE:**")
-            
-            col_s1, col_s2 = st.columns(2)
-            with col_s1:
-                st.write("🔎 **Buscando a Carolina del Príncipe:**")
-                if carolina_bd.empty: st.warning("¡ALERTA! Carolina NO EXISTE en la base de datos.")
-                else: st.dataframe(carolina_bd)
-                
-            with col_s2:
-                st.write("🔎 **Buscando a San Andrés de Cuerquia:**")
-                if sanandres_bd.empty: st.warning("¡ALERTA! San Andrés NO EXISTE en la base de datos.")
-                else: st.dataframe(sanandres_bd)
-    except Exception as e:
-        st.write(f"Error en la sonda: {e}")
-    # =====================================================================
-
 # ==========================================
 # PESTAÑA 3: MAPA DEMOGRÁFICO (GEOVISOR ZERO-CONFIG)
 # ==========================================
@@ -1815,7 +1785,7 @@ with tab_mapas:
         st.info("🌍 A escala Global/Suramérica la visualización espacial se encuentra desactivada. Los datos consolidados están disponibles en el panel de tendencias.")
         
     else:
-        col_m1, col_m2, col_m3 = st.columns([1, 1, 3])
+        col_m1, col_m2 = st.columns([1, 3])
         with col_m1:
             if escala_sel == "🌿 Veredal (Antioquia)":
                 area_mapa = "Rural"
@@ -1828,10 +1798,6 @@ with tab_mapas:
                                      index=["Total", "Urbano", "Rural"].index(area_global),
                                      key="filtro_pob_mapa")
         with col_m2:
-            st.markdown("<br>", unsafe_allow_html=True)
-            mostrar_capa_cuencas = st.toggle("🌊 Superponer Cuencas", value=False)
-                
-        with col_m3:
             st.success("🤖 **Motor Topológico Automático:** Conectando capas con precisión administrativa.")
 
         # 🛡️ ESCUDO 3: Selección segura
@@ -1934,8 +1900,7 @@ with tab_mapas:
                         )
                         
                     elif "cuencas" in escala_sel.lower():
-                        # 🚀 FIX: Le pedimos a PostGIS la misma columna combinada que ve el usuario en el Dropdown
-                        resolucion_activa = st.session_state.get('resolucion_cuencas_temp', resolucion) # Variable de seguridad
+                        resolucion_activa = st.session_state.get('resolucion_cuencas_temp', "NSS3")
                         
                         if 'NSS1' in resolucion_activa:
                             q_geo = "SELECT CASE WHEN nom_nss1 IS NOT NULL AND TRIM(nom_nss1) != '' THEN TRIM(nom_nss1) || COALESCE(' - (' || TRIM(CAST(nss1 AS TEXT)) || ')', '') ELSE NULL END AS territorio_temp, 'AH' AS padre_temp, geometry FROM cuencas WHERE geometry IS NOT NULL"
@@ -1944,11 +1909,9 @@ with tab_mapas:
                         else:
                             q_geo = "SELECT CASE WHEN nom_nss3 IS NOT NULL AND TRIM(nom_nss3) != '' THEN TRIM(nom_nss3) || COALESCE(' - (' || TRIM(CAST(nss3 AS TEXT)) || ')', '') ELSE NULL END AS territorio_temp, 'SZH' AS padre_temp, geometry FROM cuencas WHERE geometry IS NOT NULL"
                         
-                        # El ID a cruzar es simplemente el nombre completo estandarizado
                         df_mapa_plot['MATCH_ID'] = df_mapa_plot['Territorio'].apply(normalizar_texto)
                             
                     else: 
-                        # 🚀 Mantenemos la pureza para municipios
                         q_geo = "SELECT nombre_municipio AS territorio_temp, depto_nom AS padre_temp, geometry FROM municipios WHERE geometry IS NOT NULL AND nombre_municipio IS NOT NULL"
                         df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
                             lambda row: normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row.get('Padre', '')).strip() else normalizar_texto(row['Territorio']), 
@@ -1957,16 +1920,12 @@ with tab_mapas:
                     
                     territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().tolist())
                     
-                    # 🚀 AQUÍ EL CAMBIO: LLAMAMOS AL MOTOR V3
                     gdf_filtrado = motor_espacial_v3(escala_sel, q_geo, territorios_objetivo)
                     
-                    # 🛡️ ESCUDO ANTI-VACÍOS (Evita el error 'NoneType' y detiene la sábana blanca)
                     if gdf_filtrado is None or gdf_filtrado.empty:
                         st.warning("⚠️ No se encontraron geometrías para los territorios seleccionados en la base de datos.")
-                        st.stop() # Detenemos el renderizado aquí para no colapsar la app
+                        st.stop()
                     
-                    # Cálculo dinámico del centro y zoom
-                    safe_center_lat, safe_center_lon, safe_zoom = 4.57, -74.29, 5
                     gdf_4326 = gdf_filtrado.to_crs(epsg=4326)
                     minx, miny, maxx, maxy = gdf_4326.total_bounds
                     safe_center_lon = (minx + maxx) / 2
@@ -1987,41 +1946,17 @@ with tab_mapas:
                     datos_para_dibujar = df_mapa_plot.copy()
                     llave_geojson = 'id'
                     
-                # =========================================================
-                # 🎨 RENDERIZADO UNIFICADO CON CAPAS MÚLTIPLES (ESCALA LOGARÍTMICA)
-                # =========================================================
                 import numpy as np
 
-                st.write("Auditoría de Datos a Pintar:", datos_para_dibujar[['Territorio', 'MATCH_ID', 'Total']].head())
-
-                # =========================================================
-                # 🔬 SONDA DE TELEMETRÍA (PUNTO DE CONTROL FINAL)
-                # =========================================================
-                st.error("🔬 **SONDA FORENSE DE PRE-RENDERIZADO:**")
-                
-                # 1. ¿Cuántos datos demográficos llegaron?
-                st.write(f"📊 **1. Datos Poblacionales (Tabla):** {datos_para_dibujar.shape[0]} filas.")
-                if not datos_para_dibujar.empty:
-                    st.dataframe(datos_para_dibujar[['Territorio', 'MATCH_ID', 'Total']].head())
-                
-                # 2. ¿Cuántos polígonos espaciales llegaron?
-                num_poligonos = len(mapa_para_dibujar.get('features', []))
-                st.write(f"🗺️ **2. Geometrías Espaciales (GeoJSON):** {num_poligonos} polígonos.")
-                if num_poligonos > 0:
-                    muestra_id = mapa_para_dibujar['features'][0].get('id', 'SIN ID')
-                    st.write(f"🔑 **Muestra de ID Espacial recibido:** `{muestra_id}`")
-                
-                if num_poligonos == 0 or datos_para_dibujar.shape[0] == 0:
-                    st.warning("⚠️ CORTOCIRCUITO DETECTADO: Una de las dos fuentes llegó vacía al renderizado.")
+                if len(mapa_para_dibujar.get('features', [])) == 0 or datos_para_dibujar.shape[0] == 0:
+                    st.warning("⚠️ No hay suficientes datos para renderizar el mapa.")
                     st.stop()
-                # =========================================================
                 
                 if datos_para_dibujar['Total'].sum() == 0:
                     datos_para_dibujar['Color_Fix'] = 1 
                     datos_para_dibujar['Color_Mapa'] = 1
                 else:
                     datos_para_dibujar['Color_Fix'] = datos_para_dibujar['Total']
-                    # 🔥 Transformación Logarítmica Base 10 para revelar matices poblacionales
                     datos_para_dibujar['Color_Mapa'] = np.log10(datos_para_dibujar['Total'] + 1)
                     
                 fig_mapa = px.choropleth_mapbox(
@@ -2029,7 +1964,7 @@ with tab_mapas:
                     geojson=mapa_para_dibujar,
                     locations='MATCH_ID',        
                     featureidkey=llave_geojson, 
-                    color='Color_Mapa', # 🚀 Pintamos usando el logaritmo
+                    color='Color_Mapa',
                     color_continuous_scale="Viridis",
                     mapbox_style="carto-positron",
                     zoom=safe_zoom,
@@ -2037,67 +1972,13 @@ with tab_mapas:
                     opacity=0.8,
                     hover_name='Territorio',
                     hover_data={
-                        'Color_Mapa': False, # Ocultamos el logaritmo del tooltip
+                        'Color_Mapa': False,
                         'Color_Fix': False, 
-                        'Total': ':,.0f',    # Mantenemos visible la población real
+                        'Total': ':,.0f',
                         'MATCH_ID': False
                     }
                 )
                 
-                if mostrar_capa_cuencas:
-                    try:
-                        # 🚀 FIX OVERLAY: Añadimos el casting WKB a las cuencas superpuestas
-                        q_cue_overlay = """
-                            SELECT nomah, nomzh, nom_szh, nom_nss1, nom_nss2, nom_nss3, 
-                                   ST_GeomFromWKB(decode(geometry, 'hex')) AS geometry 
-                            FROM cuencas 
-                            WHERE geometry IS NOT NULL
-                        """
-                        
-                        gdf_cue_overlay = cargar_capa_espacial_cache(q_cue_overlay, geom_col="geometry")
-                        
-                        if gdf_cue_overlay is not None and not gdf_cue_overlay.empty:
-                            # Reproyectamos a WGS84 (EPSG:4326) para Plotly
-                            gdf_cue_overlay = gdf_cue_overlay.to_crs(epsg=4326)
-                            gdf_cue_overlay['ID_CUE'] = gdf_cue_overlay.index.astype(str)
-                            
-                            cols_tooltip = ['nomah', 'nomzh', 'nom_szh', 'nom_nss1', 'nom_nss2', 'nom_nss3']
-                            
-                            for col in cols_tooltip:
-                                if col in gdf_cue_overlay.columns:
-                                    gdf_cue_overlay[col] = gdf_cue_overlay[col].apply(
-                                        lambda x: str(x).strip() if pd.notnull(x) and str(x).strip() not in ["", "None", "nan"] else "No Aplica"
-                                    )
-                            
-                            geojson_cuencas = json.loads(gdf_cue_overlay.to_json())
-                            for i, f in enumerate(geojson_cuencas['features']): 
-                                f['id'] = str(i)
-                                
-                            fig_mapa.add_trace(go.Choroplethmapbox(
-                                geojson=geojson_cuencas,
-                                locations=gdf_cue_overlay['ID_CUE'],
-                                z=[0] * len(gdf_cue_overlay),
-                                colorscale=[[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0)']],
-                                marker_line_color='black', 
-                                marker_line_width=1.5, 
-                                showscale=False,
-                                customdata=gdf_cue_overlay[cols_tooltip],
-                                hovertemplate=(
-                                    "<b>Microcuenca (NSS3):</b> %{customdata[5]}<br><br>" +
-                                    "<b>AH:</b> %{customdata[0]}<br>" +
-                                    "<b>ZH:</b> %{customdata[1]}<br>" +
-                                    "<b>SZH:</b> %{customdata[2]}<br>" +
-                                    "<b>NSS1:</b> %{customdata[3]}<br>" +
-                                    "<b>NSS2:</b> %{customdata[4]}<br><extra></extra>"
-                                )
-                            ))
-                        else:
-                            st.sidebar.warning("⚠️ La capa espacial de cuencas está vacía o no se pudo extraer.")
-                            
-                    except Exception as e:
-                        st.sidebar.warning(f"No se pudo superponer la capa de cuencas: {e}")
-                        
-                # 🔥 FIX VISUAL: Integramos el formato de la barra de leyenda
                 fig_mapa.update_layout(
                     margin={"r":0,"t":0,"l":0,"b":0}, 
                     height=700,
@@ -2751,12 +2632,6 @@ with tab_matriz:
                             df_maestro['dp_mp'] = df_maestro['dp_mp'].astype(str).str.strip().str.split('.').str[0].str.zfill(5)
                             df_maestro = df_maestro.drop_duplicates(subset=['dp_mp'], keep='first')
                             
-                            # 🔬 SONDA FORENSE: Buscar la columna DANE poblacional
-                            # 🔬 DETECTIVE FORENSE: Obligamos al sistema a mostrarnos la estructura real
-                            with st.expander("🔍 DETECTIVE FORENSE: Columnas en Archivo de Población", expanded=True):
-                                st.write("El sistema detectó estas columnas en los datos del DANE:")
-                                st.write(df_admin.columns.tolist())
-
                             # Ampliamos la lista de sospechosos basándonos en estándares del DANE
                             posibles_cols = ['MPIO', 'mpio', 'DPMP', 'dpmp', 'Código DANE', 'codigo_dane', 'dp_mp', 'MPIO_CDPMP', 'mpio_cdpmp', 'Código Municipio', 'cod_mpio']
                             posibles_cols = ['MPIO', 'mpio', 'DPMP', 'dpmp', 'Código DANE', 'codigo_dane', 'dp_mp', 'MPIO_CDPMP', 'mpio_cdpmp']
