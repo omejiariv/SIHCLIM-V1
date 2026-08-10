@@ -4,17 +4,16 @@ import sys
 import os
 import streamlit as st
 import pandas as pd
-import requests
-import io
 from sqlalchemy import text
 
-# 1. RUTA Y MÓDULOS (Declarados una sola vez)
+# 1. RUTA Y MÓDULOS
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if ROOT_DIR not in sys.path:
     sys.path.append(ROOT_DIR)
 
 from modules.db_manager import get_engine
 from modules import selectors, escenarios_weap
+from modules.utils import normalizar_texto
 
 # 2. Configuración de página
 st.set_page_config(page_title="SIHCLI | Escenarios WEAP", page_icon="⚖️", layout="wide")
@@ -24,7 +23,6 @@ selectors.renderizar_menu_navegacion("Escenarios WEAP")
 
 # 4. SELECTOR ESPACIAL
 st.sidebar.markdown("---")
-# 🚀 FIX APLICADO: Invocamos el selector exigiendo la firma explícita para WEAP
 ids_estaciones, nombre_zona, altitud_ref, gdf_zona, nivel_jerarquico = selectors.render_selector_espacial(modo_firma="weap")
 
 # 5. GUARDIA Y LÓGICA PRINCIPAL
@@ -34,39 +32,42 @@ if nivel_jerarquico == "Estaciones":
 else:
     territorio_final = nombre_zona
     
-    # 🔥 FIX: Validar si no hay selección para no ejecutar consultas en vano
     if not territorio_final or territorio_final in [["-- Seleccione --"], "-- Seleccione --"]:
         st.info("👆 Selecciona un territorio en el panel izquierdo para cargar el simulador hidrosocial.")
     else:
-        # Como la firma está blindada, ya no necesitamos rescatar nombres perdidos
-        # Solo garantizamos que lo que evaluemos sea texto
         territorio_str = territorio_final[0] if isinstance(territorio_final, list) else territorio_final
 
         # ENCENDER MOTOR SI HAY TERRITORIO VÁLIDO
         if territorio_str != "Territorio Global":
             try:
-                # --- 1. CONEXIÓN DEMOGRÁFICA (SUPABASE) ---
-                url_csv = "https://ldunpssoxvifemoyeuac.supabase.co/storage/v1/object/public/sihcli_maestros/Matriz_Multimodelo_Demografica.csv"
-                res_csv = requests.get(url_csv)
-                df_dem = pd.read_csv(io.StringIO(res_csv.content.decode('utf-8')))
-                
-                nombre_puro = territorio_str.split(" - (")[0].strip() if " - (" in territorio_str else territorio_str.strip()
-                mascara = (df_dem['Territorio'].astype(str).str.strip().str.lower() == nombre_puro.lower()) & \
-                          (df_dem['Area'].astype(str).str.strip().str.lower() == 'total')
-                
-                row_pob = df_dem[mascara]
-                if not row_pob.empty:
-                    col_pob = next((c for c in row_pob.columns if 'pob_base' in c.lower()), 'Pob_Base')
-                    st.session_state['aleph_pob_total'] = float(row_pob.iloc[0][col_pob])
-                else:
-                    st.sidebar.warning(f"⚠️ Demografía no hallada en el CSV para: {nombre_puro}")
-
-                # --- 2. CONEXIÓN HIDROLÓGICA/RURH (SQL) ---
                 engine = get_engine() 
+                nombre_puro = territorio_str.split(" - (")[0].strip() if " - (" in territorio_str else territorio_str.strip()
+                nombre_normalizado = normalizar_texto(nombre_puro)
+                
                 with engine.connect() as conn:
                     # 🛡️ Tolerancia de 120 segundos para evitar colapsos
                     conn.execute(text("SET statement_timeout = '120000'"))
                     
+                    # --- 1. CONEXIÓN DEMOGRÁFICA (Aleph SQL - Inteligencia Activa) ---
+                    # 🚀 FIX: Leemos directamente de la matriz viva entrenada en la Pág 06
+                    q_demo = text('''
+                        SELECT "Pob_Base" 
+                        FROM matriz_maestra_demografica 
+                        WHERE UPPER(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("Territorio", 'Á', 'A'), 'É', 'E'), 'Í', 'I'), 'Ó', 'O'), 'Ú', 'U'), ' ', ''))) = :t_norm 
+                        AND UPPER(TRIM("Area")) = 'TOTAL'
+                        LIMIT 1
+                    ''')
+                    pob_real = conn.execute(q_demo, {"t_norm": nombre_normalizado}).scalar()
+                    
+                    if pob_real is not None:
+                        st.session_state['aleph_pob_total'] = float(pob_real)
+                    else:
+                        # Fallback en memoria local por si acaso
+                        st.session_state['aleph_pob_total'] = st.session_state.get('pob_hum_calc_met', 0.0)
+                        if st.session_state['aleph_pob_total'] == 0.0:
+                            st.sidebar.warning(f"⚠️ Demografía no hallada en el Aleph para: {nombre_puro}. Por favor, entrena la matriz en la Pág 06.")
+
+                    # --- 2. CONEXIÓN HIDROLÓGICA/RURH (SQL) ---
                     q_h = text('SELECT "Caudal_Medio_m3s" FROM matriz_hidrologica_maestra WHERE "Territorio" = :t LIMIT 1')
                     oferta_real = conn.execute(q_h, {"t": territorio_str}).scalar()
                     if oferta_real is not None:
