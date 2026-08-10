@@ -2637,11 +2637,12 @@ def display_trends_and_forecast_tab(**kwargs):
 
         final_reg_df = None
         if sel_regs and regressors_df is not None:
+            # 🚀 FIX PANDAS: Uso de ffill() y bfill() directos para evitar colapsos
             final_reg_df = (
                 regressors_df[sel_regs]
                 .reindex(ts_clean.index)
-                .fillna(method="ffill")
-                .fillna(method="bfill")
+                .ffill()
+                .bfill()
             )
 
         horizon = st.slider("Horizonte (Meses):", 12, 48, 12, key="h_sarima")
@@ -2664,20 +2665,12 @@ def display_trends_and_forecast_tab(**kwargs):
                     st.success(f"Modelo Ajustado. RMSE: {met['RMSE']:.1f}")
 
                     fig = go.Figure()
-                    fig.add_trace(
-                        go.Scatter(x=ts_clean.index, y=ts_clean, name="Histórico")
-                    )
-                    fig.add_trace(
-                        go.Scatter(
-                            x=fc.index, y=fc, name="Pronóstico", line=dict(color="red")
-                        )
-                    )
+                    fig.add_trace(go.Scatter(x=ts_clean.index, y=ts_clean, name="Histórico"))
+                    fig.add_trace(go.Scatter(x=fc.index, y=fc, name="Pronóstico", line=dict(color="red")))
                     if not ci.empty:
                         fig.add_trace(
                             go.Scatter(
-                                x=pd.concat(
-                                    [pd.Series(ci.index), pd.Series(ci.index)[::-1]]
-                                ),
+                                x=pd.concat([pd.Series(ci.index), pd.Series(ci.index)[::-1]]),
                                 y=pd.concat([ci.iloc[:, 0], ci.iloc[:, 1][::-1]]),
                                 fill="toself",
                                 fillcolor="rgba(255,0,0,0.1)",
@@ -2685,12 +2678,13 @@ def display_trends_and_forecast_tab(**kwargs):
                                 name="Confianza 95%",
                             )
                         )
-                    st.plotly_chart(fig)
+                    # 🚀 FIX STREAMLIT: width="stretch"
+                    st.plotly_chart(fig, width="stretch")
                     st.session_state["sarima_res"] = fc
                 except Exception as e:
                     st.error(f"Error SARIMA: {e}")
 
-    # --- TAB 5: PROPHET ---
+    # --- TAB 5: PROPHET (Legado) ---
     with tabs[4]:
         st.markdown("#### Pronóstico Prophet")
         sel_regs_p = st.multiselect(
@@ -2708,11 +2702,12 @@ def display_trends_and_forecast_tab(**kwargs):
                     periods=len(regressors_df) + horizon_p + 12,
                     freq="MS",
                 )
+                # 🚀 FIX PANDAS: Uso de ffill() y bfill()
                 extended_regs = (
                     regressors_df[sel_regs_p]
                     .reindex(future_dates)
-                    .fillna(method="ffill")
-                    .fillna(method="bfill")
+                    .ffill()
+                    .bfill()
                 )
                 final_reg_p = extended_regs.reset_index().rename(
                     columns={"index": "ds", Config.DATE_COL: "ds"}
@@ -2741,17 +2736,8 @@ def display_trends_and_forecast_tab(**kwargs):
                     st.success(f"Modelo Ajustado. RMSE: {met['RMSE']:.1f}")
 
                     fig = go.Figure()
-                    fig.add_trace(
-                        go.Scatter(x=ts_clean.index, y=ts_clean, name="Histórico")
-                    )
-                    fig.add_trace(
-                        go.Scatter(
-                            x=fc["ds"],
-                            y=fc["yhat"],
-                            name="Pronóstico",
-                            line=dict(color="green"),
-                        )
-                    )
+                    fig.add_trace(go.Scatter(x=ts_clean.index, y=ts_clean, name="Histórico"))
+                    fig.add_trace(go.Scatter(x=fc["ds"], y=fc["yhat"], name="Pronóstico", line=dict(color="green")))
                     fig.add_trace(
                         go.Scatter(
                             x=pd.concat([fc["ds"], fc["ds"][::-1]]),
@@ -2762,10 +2748,9 @@ def display_trends_and_forecast_tab(**kwargs):
                             name="Confianza",
                         )
                     )
-                    st.plotly_chart(fig)
-                    st.session_state["prophet_res"] = fc[["ds", "yhat"]].set_index(
-                        "ds"
-                    )["yhat"]
+                    # 🚀 FIX STREAMLIT: width="stretch"
+                    st.plotly_chart(fig, width="stretch")
+                    st.session_state["prophet_res"] = fc[["ds", "yhat"]].set_index("ds")["yhat"]
                 except Exception as e:
                     st.error(f"Error Prophet: {e}")
 
@@ -2774,17 +2759,13 @@ def display_trends_and_forecast_tab(**kwargs):
         s, p = st.session_state.get("sarima_res"), st.session_state.get("prophet_res")
         if s is not None and p is not None:
             fig = go.Figure()
-            fig.add_trace(
-                go.Scatter(x=s.index, y=s, name="SARIMA", line=dict(color="red"))
-            )
-            fig.add_trace(
-                go.Scatter(x=p.index, y=p, name="Prophet", line=dict(color="green"))
-            )
-            fig.update_layout(title="Comparativa de Modelos")
-            st.plotly_chart(fig)
+            fig.add_trace(go.Scatter(x=s.index, y=s, name="SARIMA", line=dict(color="red")))
+            fig.add_trace(go.Scatter(x=p.index, y=p, name="Prophet", line=dict(color="green")))
+            fig.update_layout(title="Comparativa de Modelos", hovermode="x unified")
+            # 🚀 FIX STREAMLIT: width="stretch"
+            st.plotly_chart(fig, width="stretch")
         else:
-            st.info("Ejecute ambos modelos para comparar.")
-
+            st.info("Ejecute ambos modelos para comparar (SARIMA y Prophet).")
 
 def display_anomalies_tab(
     df_long, df_monthly_filtered, stations_for_analysis, **kwargs
