@@ -2027,7 +2027,7 @@ with tab_lactosuero:
     # Extraer específicamente las vacas en edad de producción del censo ICA
     vacas_adultas = 0
     _mpios_activos = mpios_activos if 'mpios_activos' in locals() else []
-    if 'df_bovinos' in locals() and not df_bovinos.empty and 'HEMBRAS>3AÑOS' in df_bovinos.columns:
+    if 'df_bovinos' in locals() and df_bovinos is not None and not df_bovinos.empty and 'HEMBRAS>3AÑOS' in df_bovinos.columns:
         vacas_adultas = int(df_bovinos[df_bovinos['MUNICIPIO_NORM'].isin(_mpios_activos)]['HEMBRAS>3AÑOS'].sum())
     if vacas_adultas == 0: vacas_adultas = int(_cab_bov * 0.45) # Estimado si no hay datos
     
