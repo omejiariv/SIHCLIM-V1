@@ -647,6 +647,7 @@ elif escala_sel == "💧 Cuencas Hidrográficas":
         sel_szh = st.sidebar.selectbox("3. Subzona (SZH):", ["-- Seleccione --"] + szh_opts)
         
         resolucion = st.sidebar.radio("🔎 Resolución de visualización:", ["NSS1 (Macro)", "NSS2 (Intermedia)", "NSS3 (Micro)"])
+        st.session_state['resolucion_cuencas_temp'] = resolucion # 🚀 FIX GUARDADO EN MEMORIA
         
         if 'NSS1' in resolucion:
             col_res_real, col_res_disp = 'nom_nss1', 'disp_nss1'
@@ -1924,28 +1925,35 @@ with tab_mapas:
                 # 🌍 VÍA LENTA: POSTGIS CON CACHÉ DE UNIÓN TOPOLÓGICA
                 # =========================================================
                 else:
-                    # 🚀 ENRUTADOR ESPACIAL BLINDADO V3 
+                    # 🚀 ENRUTADOR ESPACIAL BLINDADO V3 (FIX CUENCAS)
                     if "veredal" in escala_sel.lower(): 
                         q_geo = "SELECT nombre_ver AS territorio_temp, nomb_mpio AS padre_temp, geometry FROM veredas_geometria WHERE geometry IS NOT NULL"
+                        df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
+                            lambda row: normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row.get('Padre', '')).strip() else normalizar_texto(row['Territorio']), 
+                            axis=1
+                        )
                         
                     elif "cuencas" in escala_sel.lower():
-                        muestra_terr = str(df_mapa_plot['Territorio'].values).upper() if not df_mapa_plot.empty else ""
-                        if any(k in muestra_terr for k in ['ATRATODARIEN', 'CAUCA', 'MAGDALENA', 'CARIBE', 'SINU', 'NECHI', 'BAJOMAGDALENA', 'MEDIOMAGDALENA']):
-                            q_geo = "SELECT nomzh AS territorio_temp, zh AS padre_temp, geometry FROM cuencas WHERE geometry IS NOT NULL AND nomzh IS NOT NULL"
-                        elif any(k in muestra_terr for k in ['MAGDALENACAUCA', 'CARIBE']):
-                            q_geo = "SELECT nomah AS territorio_temp, ah AS padre_temp, geometry FROM cuencas WHERE geometry IS NOT NULL AND nomah IS NOT NULL"
+                        # 🚀 FIX: Le pedimos a PostGIS la misma columna combinada que ve el usuario en el Dropdown
+                        resolucion_activa = st.session_state.get('resolucion_cuencas_temp', resolucion) # Variable de seguridad
+                        
+                        if 'NSS1' in resolucion_activa:
+                            q_geo = "SELECT CASE WHEN nom_nss1 IS NOT NULL AND TRIM(nom_nss1) != '' THEN TRIM(nom_nss1) || COALESCE(' - (' || TRIM(CAST(nss1 AS TEXT)) || ')', '') ELSE NULL END AS territorio_temp, 'AH' AS padre_temp, geometry FROM cuencas WHERE geometry IS NOT NULL"
+                        elif 'NSS2' in resolucion_activa:
+                            q_geo = "SELECT CASE WHEN nom_nss2 IS NOT NULL AND TRIM(nom_nss2) != '' THEN TRIM(nom_nss2) || COALESCE(' - (' || TRIM(CAST(nss2 AS TEXT)) || ')', '') ELSE NULL END AS territorio_temp, 'ZH' AS padre_temp, geometry FROM cuencas WHERE geometry IS NOT NULL"
                         else:
-                            q_geo = "SELECT nom_nss3 AS territorio_temp, nss3 AS padre_temp, geometry FROM cuencas WHERE geometry IS NOT NULL AND nom_nss3 IS NOT NULL"
+                            q_geo = "SELECT CASE WHEN nom_nss3 IS NOT NULL AND TRIM(nom_nss3) != '' THEN TRIM(nom_nss3) || COALESCE(' - (' || TRIM(CAST(nss3 AS TEXT)) || ')', '') ELSE NULL END AS territorio_temp, 'SZH' AS padre_temp, geometry FROM cuencas WHERE geometry IS NOT NULL"
+                        
+                        # El ID a cruzar es simplemente el nombre completo estandarizado
+                        df_mapa_plot['MATCH_ID'] = df_mapa_plot['Territorio'].apply(normalizar_texto)
                             
                     else: 
-                        # 🚀 Mantenemos la pureza: pedir SIEMPRE municipios
+                        # 🚀 Mantenemos la pureza para municipios
                         q_geo = "SELECT nombre_municipio AS territorio_temp, depto_nom AS padre_temp, geometry FROM municipios WHERE geometry IS NOT NULL AND nombre_municipio IS NOT NULL"
-
-                    df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
-                        lambda row: normalizar_texto(row['Territorio']) if "cuencas" in escala_sel.lower() 
-                        else (normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row.get('Padre', '')).strip() else normalizar_texto(row['Territorio'])), 
-                        axis=1
-                    )
+                        df_mapa_plot['MATCH_ID'] = df_mapa_plot.apply(
+                            lambda row: normalizar_texto(row['Territorio']) + "_" + normalizar_texto(row['Padre']) if str(row.get('Padre', '')).strip() else normalizar_texto(row['Territorio']), 
+                            axis=1
+                        )
                     
                     territorios_objetivo = tuple(df_mapa_plot['MATCH_ID'].dropna().tolist())
                     
